@@ -1,0 +1,73 @@
+# Hele applicatie:      docker compose up --build      -> http://localhost:8080
+# Alleen de database:   docker compose up -d db        (backend en frontend draai je dan zelf)
+# Vaste projectnaam: containers en volume heten hiernaar, ook als de map anders heet.
+name: slagboom-de-groene-weide
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: groeneweide
+      POSTGRES_DB: groeneweide
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Zet POSTGRES_PASSWORD in .env}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    ports:
+      # Alleen bereikbaar vanaf deze computer. 5433, omdat 5432 vaak al bezet is door een eigen PostgreSQL.
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U groeneweide -d groeneweide"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?Zet SECRET_KEY in .env}
+      POSTGRES_HOST: db
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SEED_BERT_PASSWORD: ${SEED_BERT_PASSWORD:-}
+      SEED_RECEPTIE_PASSWORD: ${SEED_RECEPTIE_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      SIMULATION_MODE: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000" # niet naar buiten open; alleen de frontend praat ermee
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+  # pgAdmin 4: de database bekijken in de browser. Start alleen als je erom vraagt:
+  #   docker compose --profile beheer up -d pgadmin    -> http://localhost:5050
+  # Niet bedoeld voor de cloud; alleen bereikbaar vanaf deze computer.
+  pgadmin:
+    image: dpage/pgadmin4:9
+    profiles: ["beheer"]
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-beheer@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?Zet PGADMIN_PASSWORD in .env}
+    volumes:
+      - pgadmindata:/var/lib/pgadmin
+      # De database staat alvast in de lijst; het wachtwoord (POSTGRES_PASSWORD) vul je zelf in.
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
+
+volumes:
+  dbdata:
+  pgadmindata:

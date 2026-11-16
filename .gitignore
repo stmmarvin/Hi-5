@@ -1,0 +1,9 @@
+.env
+*.db
+__pycache__/
+.pytest_cache/
+.venv/
+node_modules/
+dist/
+# Wordt bij npm run dev / build klaargezet door frontend/scripts/copy-ocr.mjs
+frontend/public/tesseract/

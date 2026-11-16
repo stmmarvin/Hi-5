@@ -1,0 +1,553 @@
+:root {
+  --asfalt: #2b2f34;
+  --asfalt-licht: #3a3f45;
+  --geel: #f7b500;
+  --rood: #c8281e;
+  --blauw: #1b4fa0;
+  --goed: #1f7a3a;
+  --inkt: #18211b;
+  --inkt-zacht: #56635a;
+  --vlak: #ffffff;
+  --grond: #e6eddf;
+  --lijn: #c9d4c2;
+  --tekst: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --plaat: "Barlow Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--grond);
+  color: var(--inkt);
+  font: 400 16px/1.45 var(--tekst);
+}
+
+h1, h2, h3, p, dl, dd, ol, ul { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--blauw); outline-offset: 2px; }
+.verborgen { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+.laden { padding: 40px; }
+
+/* ---------- knoppen en invoer ---------- */
+.knop {
+  display: inline-block;
+  padding: 9px 14px;
+  border: 2px solid var(--asfalt);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--inkt);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.knop:hover { background: #f0f4ec; }
+.knop:active { transform: translateY(1px); }
+.knop:disabled { opacity: .6; cursor: default; }
+.knop.klein { padding: 4px 10px; font-size: 14px; border-width: 1.5px; }
+.knop.donker { background: transparent; color: #fff; border-color: #8a9388; }
+.knop.donker:hover { background: var(--asfalt-licht); }
+.knop.primair { background: var(--geel); border-color: #15181a; color: #15181a; font: 700 22px var(--plaat); padding: 10px 22px; }
+.knop.primair:hover { background: #ffc91f; }
+.knop.goed { background: var(--goed); border-color: var(--goed); color: #fff; }
+.knop.goed:hover { background: #186330; }
+.knop.fout { background: #fff; border-color: var(--rood); color: var(--rood); }
+.knop.fout:hover { background: #fbecea; }
+
+input, select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1.5px solid #8a9388;
+  border-radius: 6px;
+  background: #fff;
+}
+input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--geel); }
+label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+.kenteken-invoer { font: 700 18px var(--plaat); text-transform: uppercase; letter-spacing: .04em; }
+.rijtje { display: flex; gap: 8px; flex-wrap: wrap; }
+.rijtje > input { flex: 1 1 120px; width: auto; min-width: 0; }
+
+.fout:where(p) { color: var(--rood); font-weight: 600; }
+.klein-tekst { font-size: 14px; color: var(--inkt-zacht); }
+
+/* ---------- kentekenplaat ---------- */
+.plaat {
+  display: inline-flex;
+  align-items: stretch;
+  border: 2px solid #15181a;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--geel);
+  color: #111;
+  font: 700 18px/1 var(--plaat);
+  letter-spacing: .05em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.plaat .band {
+  display: flex; align-items: flex-end; justify-content: center;
+  width: 1.15em; padding-bottom: 2px;
+  background: var(--blauw); color: #fff;
+  font-size: .5em; letter-spacing: 0;
+}
+.plaat .nr { padding: 4px 8px 3px; }
+.plaat.land-D, .plaat.land-B { background: #fff; }
+.plaat.land-B { color: #a8121a; }
+.plaat.groot { font-size: 42px; border-width: 3px; border-radius: 8px; }
+.plaat.groot .nr { padding: 8px 16px 6px; }
+
+/* ---------- inloggen ---------- */
+.login {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--asfalt);
+}
+.login-kaart {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 28px;
+  background: var(--vlak);
+  border-radius: 8px;
+  border-top: 8px solid var(--geel);
+}
+.login-kaart h1 { font: 700 34px/1.05 var(--plaat); }
+.login-uitleg { color: var(--inkt-zacht); }
+
+/* ---------- kop ---------- */
+.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.kop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 28px;
+  padding: 10px 20px;
+  background: var(--asfalt);
+  color: #f4f6f0;
+  border-bottom: 5px solid var(--geel);
+}
+.kop h1 { font: 700 26px/1.05 var(--plaat); }
+.kop-midden, .kop-gebruiker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.kop-gebruiker { font-size: 14px; color: #c9d1c5; }
+/* klok */
+.klok { display: flex; align-items: baseline; gap: 8px; font-size: 14px; color: #b9c2b4; }
+.klok strong { font: 700 28px/1 var(--plaat); color: #fff; font-variant-numeric: tabular-nums; }
+.schakel { display: inline-flex; grid-auto-flow: column; align-items: center; gap: 7px; font-size: 15px; font-weight: 500; cursor: pointer; }
+
+/* ---------- werkblad ---------- */
+.werkblad { display: grid; grid-template-columns: minmax(0, 1fr) 460px; min-height: 0; }
+.terrein { position: relative; min-height: 0; background: #a9d3ee; overflow: hidden; }
+.terrein canvas { display: block; touch-action: none; }
+
+.meldingen { position: absolute; top: 12px; left: 12px; right: 12px; display: grid; gap: 6px; justify-items: start; pointer-events: none; }
+.melding { padding: 7px 12px; border-radius: 6px; background: var(--asfalt); color: #fff; font-size: 15px; font-weight: 500; max-width: 60ch; }
+.melding.geel { background: var(--geel); color: #1b1500; }
+.melding.stil { background: rgba(43, 47, 52, .8); }
+.login .melding { background: var(--grond); color: var(--inkt); }
+
+.kaarten { position: absolute; left: 12px; bottom: 12px; width: min(400px, calc(100% - 24px)); display: grid; gap: 10px; }
+.kaart { padding: 14px; border-radius: 8px; background: var(--vlak); border: 1px solid var(--lijn); }
+.kaart-kop { font: 700 19px/1.15 var(--plaat); margin-bottom: 8px; }
+.kaart-sub { margin-top: 8px; font-size: 14px; }
+.kaart-leeg { color: #a9b2a6; }
+.kaart.camera { background: var(--asfalt); border-color: var(--asfalt); color: #e8ece4; }
+.kaart.camera .kaart-kop { font: 500 14px var(--tekst); color: #a9b2a6; }
+.kaart.camera .kaart-sub { color: #c9d1c5; }
+.kaart.rijden { border: 2px solid var(--geel); }
+.kaart.rijden p:not(.kaart-kop) { font-size: 14px; }
+.oordeel { margin-top: 10px; padding: 7px 10px; border-radius: 5px; font-weight: 600; background: var(--asfalt-licht); color: #fff; }
+.oordeel.goed { background: var(--goed); }
+.oordeel.fout { background: var(--rood); }
+
+.kaart.intercom { border: 3px solid var(--blauw); animation: bel 1s ease-in-out 3; }
+@keyframes bel { 50% { box-shadow: 0 0 0 6px rgba(27, 79, 160, .3); } }
+.citaat { font-size: 18px; font-weight: 500; line-height: 1.35; }
+.kaart.intercom .kaart-sub { color: var(--inkt-zacht); margin-bottom: 12px; }
+.kaart.intercom .knop { flex: 1 1 140px; text-align: center; }
+
+.kaart.terugkoppeling { border-left: 8px solid var(--goed); }
+.kaart.terugkoppeling.fout { border-left-color: var(--rood); }
+.kaart.terugkoppeling.fout .kaart-kop { color: var(--rood); }
+.kaart.terugkoppeling.goed .kaart-kop { color: var(--goed); }
+
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(24, 33, 27, .55); overflow: auto; }
+.overlay-kaart { width: min(560px, 100%); display: grid; gap: 14px; padding: 28px; background: var(--vlak); border-radius: 8px; border-top: 8px solid var(--geel); }
+.overlay-kaart h2 { font: 700 38px/1.05 var(--plaat); }
+.overlay-kaart h3 { font: 700 21px var(--plaat); }
+.overlay-kaart .knop { justify-self: start; }
+.uitslag-lijst { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 24px; }
+.uitslag-lijst dt { font-size: 14px; color: var(--inkt-zacht); }
+.uitslag-lijst dd { font: 700 34px/1 var(--plaat); font-variant-numeric: tabular-nums; }
+.ranglijst { padding-left: 1.4em; display: grid; gap: 4px; }
+.ranglijst li > * { display: inline-block; }
+.ranglijst span:first-child { min-width: 9em; font-weight: 600; }
+.ranglijst span { color: var(--inkt-zacht); min-width: 10em; }
+.ranglijst strong { font-variant-numeric: tabular-nums; }
+
+/* ---------- zijpaneel ---------- */
+.paneel { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; background: var(--vlak); border-left: 1px solid var(--lijn); }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px 10px 0; border-bottom: 2px solid var(--asfalt); }
+.tabs button {
+  padding: 7px 11px;
+  border: 0; border-radius: 6px 6px 0 0;
+  background: transparent;
+  font: 700 18px var(--plaat);
+  color: var(--inkt-zacht);
+  cursor: pointer;
+}
+.tabs button[aria-selected="true"] { background: var(--asfalt); color: #fff; }
+.tab-inhoud { overflow: auto; padding: 14px; display: grid; gap: 14px; align-content: start; }
+.tab-kop { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; color: var(--inkt-zacht); }
+
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th { text-align: left; font-weight: 600; color: var(--inkt-zacht); font-size: 14px; padding: 4px 10px 6px 0; border-bottom: 1px solid var(--lijn); white-space: nowrap; }
+td { padding: 7px 10px 7px 0; border-bottom: 1px solid #e4eadf; vertical-align: middle; font-variant-numeric: tabular-nums; }
+td small { display: block; color: var(--inkt-zacht); font-size: 13px; }
+.uitslag { font-weight: 600; }
+.uitslag.goed { color: var(--goed); }
+.uitslag.fout { color: var(--rood); }
+.leeg { color: var(--inkt-zacht); }
+
+.blok { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--lijn); }
+.blok h3, .regels h3 { font: 700 20px var(--plaat); }
+.blok.nieuw { grid-template-columns: 1fr 1fr; }
+.blok.nieuw h3, .blok.nieuw .knop, .blok.nieuw p { grid-column: 1 / -1; }
+.blok.nieuw .knop { justify-self: start; }
+
+.regels { display: grid; gap: 10px; }
+.regels ul { padding-left: 1.2em; display: grid; gap: 6px; }
+
+.webcam { gap: 12px; }
+.camera-instellingen { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+.camera-instellingen .licht { grid-column: 1 / -1; display: flex; align-items: center; gap: 7px; }
+.camera-instellingen .licht input { width: 18px; }
+.webcam-beeld {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 2px solid var(--asfalt);
+  border-radius: 8px;
+  background: #111;
+}
+.webcam-beeld video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.kader {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 3px solid var(--geel);
+  border-radius: 4px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, .28);
+  pointer-events: none;
+}
+
+.boeking { display: grid; gap: 6px; justify-items: start; padding: 12px; border-radius: 8px; border-left: 8px solid var(--goed); background: rgba(31, 122, 58, .12); }
+.boeking.fout { border-left-color: var(--rood); background: rgba(200, 40, 30, .12); }
+.boeking strong { font: 700 20px/1.15 var(--plaat); }
+.boeking p { font-size: 14px; }
+
+/* ---------- smal scherm ---------- */
+@media (max-width: 980px) {
+  html, body, #root, .app { height: auto; }
+  .werkblad { grid-template-columns: 1fr; }
+  .terrein { height: 68vh; min-height: 420px; }
+  .paneel { border-left: 0; border-top: 1px solid var(--lijn); }
+  .tab-inhoud { overflow: visible; }
+  .kop { padding: 10px 14px; }
+  .plaat.groot { font-size: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kaart.intercom { animation: none; }
+}
+
+/* ---------- nieuw observatie-dashboard ---------- */
+:root {
+  --asfalt: #111827;
+  --asfalt-licht: #1d2b40;
+  --geel: #ffb84d;
+  --blauw: #4fd1c5;
+  --goed: #38c78a;
+  --rood: #ff6b6b;
+  --inkt: #e8f0f7;
+  --inkt-zacht: #9fb0c2;
+  --vlak: #142033;
+  --grond: #08111f;
+  --lijn: #2a3b52;
+}
+
+body { background: radial-gradient(circle at 20% 0%, #17304a 0, var(--grond) 42%); }
+.kop {
+  background: rgba(8, 17, 31, .92);
+  border-bottom: 1px solid rgba(79, 209, 197, .45);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .28);
+}
+.kop h1 { letter-spacing: .03em; }
+.modus-label {
+  padding: 5px 10px;
+  border: 1px solid rgba(79, 209, 197, .55);
+  border-radius: 999px;
+  color: var(--blauw);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.terrein { background: #10243a; }
+.paneel {
+  background: rgba(20, 32, 51, .96);
+  border-left: 1px solid rgba(79, 209, 197, .22);
+  box-shadow: -12px 0 34px rgba(0, 0, 0, .2);
+}
+.tabs { border-bottom-color: rgba(79, 209, 197, .4); }
+.tabs button { color: #9fb0c2; }
+.tabs button[aria-selected="true"] { background: #20344d; color: #fff; }
+.tab-inhoud { color: var(--inkt); }
+.kaart, .overlay-kaart {
+  background: rgba(20, 32, 51, .94);
+  border: 1px solid rgba(159, 176, 194, .25);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .22);
+}
+.kaart.camera { background: rgba(12, 23, 39, .9); border-color: rgba(79, 209, 197, .3); }
+.kaart.rijden { border-color: var(--geel); }
+.voertuig-bediening { display: flex; flex-wrap: wrap; gap: 6px; }
+.overlay { background: rgba(4, 10, 19, .72); }
+.overlay-kaart { border-top: 3px solid var(--blauw); }
+.overlay-kaart h2 { color: #fff; }
+.modus-keuze { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.modus-kaart {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #3b5875;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #1d3551, #132235);
+  color: var(--inkt);
+  text-align: left;
+  cursor: pointer;
+}
+.modus-kaart:hover { border-color: var(--blauw); transform: translateY(-2px); }
+.modus-kaart strong { color: var(--geel); font: 700 21px var(--plaat); }
+.modus-kaart span { color: var(--inkt-zacht); font-size: 14px; }
+input, select { background: #0c1727; border-color: #3b5875; color: var(--inkt); }
+.knop { border-color: #4b6682; background: #1b2d44; color: var(--inkt); }
+.knop:hover { background: #294361; }
+.knop.primair { background: var(--geel); color: #131b26; border-color: var(--geel); }
+.schakel { color: var(--inkt-zacht); }
+
+@media (max-width: 650px) {
+  .modus-keuze { grid-template-columns: 1fr; }
+}
+.webcam > .schakel input { width: 18px; }
+
+/* ---------- overzicht als lade: verborgen tot je hem zelf opent ---------- */
+.werkblad { grid-template-columns: minmax(0, 1fr); position: relative; overflow: hidden; }
+.paneel.lade {
+  position: absolute; top: 12px; right: 12px; bottom: 12px; z-index: 30;
+  width: min(480px, calc(100% - 24px));
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border: 1px solid rgba(79, 209, 197, .35); border-radius: 16px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+  transform: translateX(calc(100% + 24px)); opacity: 0;
+  transition: transform .28s cubic-bezier(.2, .8, .2, 1), opacity .2s;
+}
+.paneel.lade.open { transform: none; opacity: 1; }
+.lade-kop { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 4px; }
+.lade-kop h2 { font: 700 24px/1 var(--plaat); letter-spacing: .03em; }
+.lade-sluit {
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid currentColor; background: transparent;
+  font-size: 16px; cursor: pointer; opacity: .8;
+}
+.lade-sluit:hover { opacity: 1; }
+.lade-knop {
+  position: absolute; top: 12px; right: 12px; z-index: 20;
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px;
+  border: 1px solid rgba(79, 209, 197, .5); border-radius: 999px;
+  background: rgba(12, 23, 39, .82); color: #fff; font: 600 15px var(--tekst);
+  cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .3);
+}
+.lade-knop:hover { background: rgba(27, 79, 160, .9); }
+.meldingen { right: 150px; }
+@media (max-width: 980px) {
+  .paneel.lade { position: fixed; }
+  .tab-inhoud { overflow: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .paneel.lade { transition: none; } }
+
+/* ---------- zelf rijden ---------- */
+.teller { display: flex; align-items: baseline; gap: 6px; }
+.teller strong { font: 700 44px/1 var(--plaat); }
+.teller span { margin-left: auto; font-size: 13px; opacity: .75; }
+.toetsen { font-size: 13px; line-height: 2; }
+kbd {
+  display: inline-block; min-width: 22px; padding: 0 6px; margin: 0 2px; border: 1px solid currentColor; border-radius: 5px;
+  font: 600 12px/20px var(--tekst); text-align: center; opacity: .9;
+}
+.voertuig-bediening { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Klikken en slepen in de simulatie selecteert geen tekst en laat geen kader achter. */
+.kop, .terrein, .lade-kop, .tabs { user-select: none; -webkit-user-select: none; }
+.terrein input { user-select: text; -webkit-user-select: text; }
+.terrein canvas { outline: none; -webkit-tap-highlight-color: transparent; }
+
+/* Alleen in invoervelden zie je een tekstcursor; op gewone tekst klikken geeft geen typstreepje. */
+body { user-select: none; -webkit-user-select: none; cursor: default; caret-color: transparent; }
+input, textarea, select { user-select: text; -webkit-user-select: text; caret-color: auto; }
+input:not([type="checkbox"]):not([type="radio"]), textarea { cursor: text; }
+label, select, input[type="checkbox"] { cursor: pointer; }
+
+.richting { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.richting .knop { text-align: center; }
+.richting .knippert { background: #ff9d2e; border-color: #ff9d2e; color: #1b1300; animation: knipper 1s steps(2, start) infinite; }
+@keyframes knipper { to { background: #7a4a12; border-color: #7a4a12; color: #fff; } }
+@media (prefers-reduced-motion: reduce) { .richting .knippert { animation: none; } }
+
+/* ---------- gesprek met de receptie ---------- */
+.kaart.gesprek { animation: none; display: grid; gap: 8px; max-height: min(70vh, 560px); overflow: auto; }
+.gesprek-regels { display: grid; gap: 6px; }
+.regel { padding: 8px 10px; border-radius: 10px; font-size: 14px; background: rgba(27, 79, 160, .16); justify-self: start; max-width: 92%; }
+.regel.jij { background: rgba(247, 181, 0, .2); justify-self: end; }
+.regel span { display: block; font: 700 12px var(--tekst); letter-spacing: .04em; text-transform: uppercase; opacity: .7; }
+.gesprek-keuzes { display: grid; gap: 6px; }
+.gesprek-keuzes .knop { text-align: left; font-weight: 500; }
+
+/* Meldingen bij de slagboom komen rustig in beeld. */
+.kaart, .melding { animation: verschijn .25s ease-out; }
+.kaart.intercom:not(.gesprek) { animation: verschijn .25s ease-out, bel 1s ease-in-out 3; }
+@keyframes verschijn { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .kaart, .melding, .kaart.intercom:not(.gesprek) { animation: none; } }
+
+/* ---------- rijden: smalle balk onderin, het beeld blijft vrij ---------- */
+.rij-hud {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 15;
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px; max-width: calc(100% - 24px);
+  border: 1px solid rgba(79, 209, 197, .35); border-radius: 999px;
+  background: rgba(8, 16, 28, .78); color: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.rij-snelheid { display: flex; align-items: baseline; gap: 4px; min-width: 74px; justify-content: center; }
+.rij-snelheid strong { font: 700 30px/1 var(--plaat); font-variant-numeric: tabular-nums; }
+.rij-snelheid span { font-size: 11px; opacity: .7; }
+.rij-streep { width: 1px; align-self: stretch; margin: 4px 2px; background: rgba(255, 255, 255, .2); }
+.rij-knop {
+  padding: 7px 11px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 999px; background: transparent;
+  color: #fff; font: 600 13px var(--tekst); white-space: nowrap; cursor: pointer;
+}
+.rij-knop:hover { background: rgba(255, 255, 255, .14); }
+.rij-knop[aria-pressed="true"] { border-color: rgba(79, 209, 197, .8); }
+.rij-knop.pijl { width: 38px; padding: 7px 0; font-size: 15px; }
+.rij-knop.knippert { background: #ff9d2e; border-color: #ff9d2e; color: #1b1300; animation: knipper 1s steps(2, start) infinite; }
+.rij-knop.stop { border-color: rgba(255, 110, 100, .7); color: #ffb3ad; }
+.rij-melding {
+  position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%); z-index: 15;
+  display: grid; gap: 8px; justify-items: center; width: max-content; max-width: min(560px, calc(100% - 24px));
+  padding: 9px 14px; border-radius: 12px; background: rgba(8, 16, 28, .82); color: #fff;
+  font-size: 14px; text-align: center; animation: verschijn .25s ease-out;
+}
+.rij-hulp {
+  position: absolute; right: 12px; bottom: 74px; z-index: 16;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; padding: 12px 14px; max-width: calc(100% - 24px);
+  border: 1px solid rgba(79, 209, 197, .35); border-radius: 12px; background: rgba(8, 16, 28, .9); color: #fff; font-size: 13px;
+}
+.rij-hulp .knop { grid-column: 1 / -1; justify-self: end; }
+.kaarten.met-hud { bottom: 74px; width: min(360px, calc(100% - 24px)); }
+
+/* Aanraakknoppen: alleen op schermen zonder muis (telefoon, tablet). */
+.rij-pedalen { display: none; position: absolute; bottom: 74px; z-index: 14; gap: 10px; }
+.rij-pedalen.links { left: 12px; }
+.rij-pedalen.rechts { right: 12px; }
+.pedaal {
+  width: 72px; height: 72px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .45);
+  background: rgba(8, 16, 28, .55); color: #fff; font: 700 17px var(--tekst);
+  touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+.pedaal:active { background: rgba(79, 209, 197, .45); }
+@media (pointer: coarse) {
+  .rij-pedalen { display: flex; }
+  .kaarten.met-hud { bottom: 160px; }
+  .rij-melding { bottom: 160px; }
+  .rij-hulp { display: none; }
+}
+
+/* ---------- responsive: de simulatie vult altijd het hele scherm ---------- */
+html, body, #root, .app { height: 100%; }
+.app { height: 100dvh; }
+.terrein { height: auto; min-height: 0; }
+.kop { flex-wrap: wrap; gap: 6px 16px; }
+.kaarten { max-height: calc(100% - 24px); overflow-y: auto; }
+
+@media (max-width: 980px) {
+  html, body, #root { height: 100%; }
+  .app { height: 100dvh; }
+  .terrein { height: auto; min-height: 0; }
+  .kop { padding: 8px 12px; }
+  .kop h1 { font-size: 20px; }
+  .klok span { display: none; }
+  .klok strong { font-size: 22px; }
+  .kop-gebruiker span { display: none; }
+}
+@media (max-width: 640px) {
+  .kop h1 { display: none; }
+  .kop-midden { gap: 6px 10px; }
+  .modus-label { display: none; }
+  .lade-knop { top: 8px; right: 8px; padding: 8px 12px; font-size: 14px; }
+  .meldingen { top: 8px; left: 8px; right: 120px; }
+  .kaarten { left: 8px; bottom: 8px; width: calc(100% - 16px); }
+  .kaart { padding: 10px; }
+  .plaat.groot { font-size: 28px; }
+  .paneel.lade { top: 0; right: 0; bottom: 0; width: 100%; border-radius: 0; }
+  .overlay-kaart { padding: 18px; }
+  .overlay-kaart h2 { font-size: 28px; }
+  .rij-hud { bottom: 8px; gap: 4px; padding: 5px 6px; border-radius: 16px; flex-wrap: wrap; justify-content: center; }
+  .rij-knop { padding: 6px 8px; font-size: 12px; }
+  .rij-snelheid { min-width: 60px; }
+  .rij-snelheid strong { font-size: 24px; }
+  .rij-streep { display: none; }
+  .kaarten.met-hud, .rij-melding { bottom: 100px; }
+  .rij-pedalen { bottom: 100px; }
+  .pedaal { width: 62px; height: 62px; font-size: 15px; }
+}
+/* Liggende telefoon: weinig hoogte, dus alles compacter. */
+@media (max-height: 520px) {
+  .kop { padding: 4px 10px; }
+  .kop h1, .kop-gebruiker span { display: none; }
+  .klok strong { font-size: 18px; }
+  .overlay { place-items: start center; }
+  .overlay-kaart { padding: 14px; gap: 8px; }
+  .overlay-kaart h2 { font-size: 24px; }
+  .kaarten { max-height: calc(100% - 16px); }
+}
+@media (prefers-reduced-motion: reduce) { .rij-knop.knippert, .rij-melding { animation: none; } }
+
+/* ---------- auto en kenteken kiezen ---------- */
+.kaart.rijden { display: grid; gap: 10px; }
+.auto-keuze { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.auto-keuze button {
+  display: grid; gap: 2px; padding: 8px 10px; text-align: left; border: 2px solid var(--lijn); border-radius: 10px;
+  background: transparent; color: inherit; cursor: pointer;
+}
+.auto-keuze button strong { font: 700 16px/1.1 var(--plaat); }
+.auto-keuze button span { font-size: 12px; opacity: .75; }
+.auto-keuze button[aria-pressed="true"] { border-color: var(--geel); background: rgba(247, 181, 0, .14); }
+.kleur-keuze { display: flex; flex-wrap: wrap; gap: 8px; }
+.kleur-keuze button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .5); cursor: pointer; }
+.kleur-keuze button[aria-pressed="true"] { outline: 3px solid var(--geel); outline-offset: 2px; }
+.keuze-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.keuze-tabs button { padding: 7px 8px; border: 2px solid var(--lijn); border-radius: 8px; background: transparent; color: inherit; font: 600 14px var(--tekst); cursor: pointer; }
+.keuze-tabs button[aria-pressed="true"] { border-color: var(--blauw); background: rgba(27, 79, 160, .2); }
+.veld-kop { font: 600 13px var(--tekst); letter-spacing: .04em; text-transform: uppercase; opacity: .75; }
+.kaart.rijden .boeking { padding: 8px 10px; }
+.kaart.rijden .boeking strong { font-size: 16px; }
+
+/* Slecht weer: weerkeuze, veiligheidsvergrendeling en de status van de intercomverbinding. */
+.weer-keuze { padding: 3px 6px; border-radius: 5px; font-size: 14px; }
+/* De vergrendeling staat in het midden en boven de kaarten, zodat de knop altijd bereikbaar is. */
+.meldingen:has(.rood) { z-index: 3; }
+.melding.rood { background: var(--rood); pointer-events: auto; display: grid; gap: 8px; justify-items: start; justify-self: center; }
+.melding.rood .knop { background: #fff; color: #1b1500; }
+.lijn { display: block; margin-top: 6px; font-size: 13px; opacity: .85; }

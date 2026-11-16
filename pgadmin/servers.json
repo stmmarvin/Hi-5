@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "De Groene Weide",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "groeneweide",
+      "Username": "groeneweide",
+      "SSLMode": "prefer"
+    }
+  }
+}
