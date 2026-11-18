@@ -5,14 +5,17 @@ import { api, ApiError } from '../api';
 import type { Country, Direction, PassageRow, Permit, PresenceRow, ScanResult, SyncItem, User, VehicleType } from '../types';
 import { daylight, isoAt, isoDate, SECONDS_PER_MINUTE, SHIFT_END, SHIFT_START } from './clock';
 import { specOf } from '../scene/Car';
+import { PARKING } from '../scene/layout';
+import { clearLocal, loadLocal, saveLocal } from './localStore';
 import { boxesOverlap, corners, hitsScenery, type Box } from './obstacles';
 import {
   heaterOn, ICE_AFTER_MINUTES, KEEPER_MINUTES, MELT_PER_HOUR, READ_LIMIT, SALT_LASTS_MINUTES, SNOW_LOCK_CM, SNOW_PER_HOUR,
   WEATHER, type GateLock, type Weather,
 } from './weather';
-import { decideLocal, plateKey } from './rules';
+import { DUTCH_LETTERS, dutchPlateProblem, formatPlate } from './plates';
+import { decideLocal, plateKey, EMERGENCY_TYPES, zoneFor, type Zone } from './rules';
 import { buildDeck, CAR_COLORS, CAR_MODELS, type Scenario } from './scenarios';
-import { barrierSound, bump, carVoice, chime, hornSound, startAmbience, stopAllVoices, stopAmbience, updateAmbience, type CarVoice, setMuted, setWeatherSound, startEngine, speak, stopEngine, stopSpeaking, tick as indicatorTick, windowSound, hasDutchVoice, type Gender } from './sound';
+import { barrierSound, bump, carVoice, chime, hornSound, startAmbience, stopAllVoices, stopAmbience, updateAmbience, type CarVoice, setMuted, setSiren, setWeatherSound, startEngine, speak, stopEngine, stopSpeaking, tick as indicatorTick, windowSound, hasDutchVoice, type Gender } from './sound';
 
 export interface SimVehicle {
   id: number;
@@ -26,6 +29,8 @@ export interface SimVehicle {
   indicator?: 'left' | 'right' | null;
   windowsOpen?: boolean;
   hornUntil?: number;
+  /** Zwaailicht en sirene van de hulpdienst die je zelf bestuurt. */
+  siren?: boolean;
   lane: Direction;
   /** Positie langs de oprit; wordt elk beeld bijgewerkt, buiten React om. */
   z: number;
@@ -64,6 +69,8 @@ export interface Call {
   holder: string;
   message: string;
   since: number;
+  /** Er is een storing: een medewerker staat bij de slagboom en bedient die met de hand. */
+  manual?: 'stroom' | 'defect';
 }
 
 export interface Chat {
@@ -111,6 +118,11 @@ interface GameState {
   gateLock: GateLock | null;
   /** De laatste keer dat de camera een kenteken las: hoe lang het duurde en of het lukte. */
   lastRead: { seconds: number; read: boolean } | null;
+  /** Stroom: gewoon net, de noodaccu of helemaal uit. */
+  power: 'net' | 'accu' | 'uit';
+  /** Hoeveel minuten de noodaccu nog meegaat. */
+  battery: number;
+  gateDefect: boolean;
 }
 
 const fresh = {
@@ -119,6 +131,7 @@ const fresh = {
   mode: 'simulatie' as SessionMode, view: 'binnen' as DriveView, speedKmh: 0, controls: 0,
   readout: null, call: null, chat: null, queue: { in: 0, out: 0 }, vehicles: [], notice: '',
   weather: 'helder' as Weather, snowCm: 0, gateLock: null, lastRead: null,
+  power: 'net' as 'net' | 'accu' | 'uit', battery: 60, gateDefect: false,
 };
 
 export const useGame = create<GameState>(() => ({
@@ -161,6 +174,8 @@ export const world = {
   minute: SHIFT_START,
   speed: 1,
   barrier: { in: false, out: false },
+  /** Storing: het lampje op de slagboom knippert oranje. */
+  fault: false,
   beam: { in: false },
   // Het weer bij de slagboom: soort, sneeuwhoogte in centimeters, ijs op de slagboom, vergrendeling en lensverwarming.
   weather: 'helder' as Weather,
@@ -170,9 +185,10 @@ export const world = {
   heater: false,
 };
 
-export const VEHICLE_LENGTH: Record<VehicleType, number> = { auto: 4.3, camper: 6.4, bestelbus: 5.4, vrachtwagen: 8, ambulance: 5.8 };
+export const VEHICLE_LENGTH: Record<VehicleType, number> = { auto: 4.3, camper: 6.4, bestelbus: 5.4, vrachtwagen: 8, ambulance: 5.8, brandweer: 7.4, politie: 4.78 };
 export const VEHICLE_NAME: Record<VehicleType, string> = {
   auto: 'Personenauto', camper: 'Camper', bestelbus: 'Bestelbus', vrachtwagen: 'Vrachtwagen', ambulance: 'Ambulance',
+  brandweer: 'Brandweerwagen', politie: 'Politieauto',
 };
 
 export const VEHICLE_MODEL: Record<VehicleType, string> = {
@@ -181,11 +197,28 @@ export const VEHICLE_MODEL: Record<VehicleType, string> = {
   bestelbus: 'Mercedes Sprinter',
   vrachtwagen: 'DAF XD',
   ambulance: 'Mercedes Sprinter ambulance',
+  brandweer: 'Scania brandweerwagen',
+  politie: 'Audi RS4 Avant',
 };
 
-/** Een Nederlands kenteken bestaat uit medeklinkers, cijfers en streepjes; al het andere (ook een spatie) valt weg. */
+export type EmergencyType = 'politie' | 'ambulance' | 'brandweer';
+
+/** De hulpdiensten waarmee je zelf kunt rijden. De kentekens zijn verzonnen en voldoen aan de regels van de RDW. */
+export const EMERGENCY_SERVICES: Record<EmergencyType, { label: string; plate: string; color: string }> = {
+  politie: { label: 'Politie', plate: 'PT-112-K', color: '#f2f4f5' },
+  ambulance: { label: 'Ambulance', plate: 'GZ-112-B', color: '#f4d21f' },
+  brandweer: { label: 'Brandweer', plate: 'BW-112-R', color: '#c8201c' },
+};
+
+/** Deze voertuigen hebben de carrosserie van een personenauto; de rest is een groot voertuig. */
+export const hasCarBody = (type: VehicleType) => type === 'auto' || type === 'politie';
+
+/**
+ * Een Nederlands kenteken bestaat uit letters, cijfers en streepjes. Volgens de RDW zonder klinkers en zonder C en Q;
+ * al het andere (ook een spatie) valt weg.
+ */
 export function cleanDutchPlateInput(value: string): string {
-  return value.toUpperCase().replace(/[^BCDFGHJKLMNPQRSTVWXYZ0-9-]/g, '').replace(/-{2,}/g, '-');
+  return value.toUpperCase().replace(new RegExp(`[^${DUTCH_LETTERS}0-9-]`, 'g'), '').replace(/-{2,}/g, '-');
 }
 
 // De slagbomen staan op z = 0. Inrijden gaat richting -z, uitrijden richting +z.
@@ -205,6 +238,9 @@ let answerCall: ((open: boolean) => void) | null = null;
 let playerIntercom: (() => void) | null = null;
 /** Welke voertuigen in de simulatie echt op het terrein rijden. Het systeem zelf weet dit niet: de uitgang leest geen kentekens. */
 const present = new Set<string>();
+/** Tot waar een geregistreerd voertuig mag: de parkeerplaats of ook de camping. */
+const zoneOf = new Map<string, Zone>();
+const BATTERY_MINUTES = 60;
 const chain: Record<Direction, Promise<void>> = { in: Promise.resolve(), out: Promise.resolve() };
 
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms / world.speed));
@@ -269,6 +305,7 @@ function sessionExpired(): never {
   silenceAll();
   stopAmbience();
   stopEngine();
+  clearLocal();
   set({ user: null, phase: 'login', notice: 'Je sessie is verlopen. Log opnieuw in.' });
   throw new Aborted();
 }
@@ -293,6 +330,7 @@ function queueOffline(sc: Scenario, minute: number, open: boolean, manual: boole
     plate: sc.plate, country: sc.country, vehicle_type: sc.type,
     at: isoAt(minute), open, manual, reason: reason.slice(0, 200),
   });
+  saveLocal({ queue: offlineQueue });
   set({ pendingSync: offlineQueue.length });
 }
 
@@ -301,6 +339,7 @@ export async function refresh() {
   try {
     // Ook de kentekenlijst: een gast verdwijnt 24 uur na het einde van de reservering uit het systeem.
     const [presence, log, permits] = await Promise.all([api.presence(), api.passages(60), api.permits()]);
+    saveLocal({ permits });
     set({ presence, log, permits });
   } catch {
     /* het overzicht wordt bij de volgende passage opnieuw opgehaald */
@@ -310,19 +349,122 @@ export async function refresh() {
 export async function setOnline(online: boolean) {
   set({ online, notice: '' });
   if (!online) return;
+  await flushQueue('Internet is terug');
+  if (!get().notice) set({ notice: 'Internet is terug.' });
+}
+
+/** Stuurt wat tijdens een storing is gebeurd alsnog naar de server. */
+async function flushQueue(intro: string) {
   if (offlineQueue.length) {
     const items = offlineQueue;
     offlineQueue = [];
     try {
       await api.sync(items);
-      set({ pendingSync: 0, notice: `Internet is terug: ${items.length} passage(s) alsnog vastgelegd in het logboek.` });
+      saveLocal({ queue: offlineQueue });
+      set({ pendingSync: 0, notice: `${intro}: ${items.length} passage(s) alsnog vastgelegd in het logboek.` });
     } catch {
       offlineQueue = [...items, ...offlineQueue];
+      saveLocal({ queue: offlineQueue });
       set({ online: false, pendingSync: offlineQueue.length, notice: 'Synchroniseren is niet gelukt. Probeer het zo nog eens.' });
       return;
     }
   }
   await refresh();
+}
+
+// ---------- na de ingang ----------
+
+/** Draait van de weg af de parkeerplaats op en verdwijnt daar uit beeld. */
+function turnIntoParking(vehicle: SimVehicle): Promise<void> {
+  const duration = 2000 / world.speed;
+  const start = performance.now();
+  return new Promise((done) => {
+    const step = (now: number) => {
+      const p = Math.min(1, (now - start) / duration);
+      vehicle.heading = Math.min(1, p * 2.5) * (Math.PI / 2);
+      vehicle.offset = -24 * p * p;
+      if (p < 1) requestAnimationFrame(step); else done();
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+/** Bezoekers en leveranciers gaan naar de parkeerplaats, de anderen rijden door naar de camping. */
+async function onSite(vehicle: SimVehicle, zone: Zone, mine: number) {
+  try {
+    if (zone === 'parkeren') {
+      await drive(vehicle, PARKING.z, 1900);
+      guard(mine);
+      await turnIntoParking(vehicle);
+    } else {
+      await drive(vehicle, ROAD.endIn, 3600);
+    }
+    guard(mine);
+    removeVehicle(vehicle);
+  } catch (error) {
+    if (!(error instanceof Aborted)) throw error;
+  }
+}
+
+/** Laat een voertuig bij de ingang door en stuurt het naar de plek waar het mag komen. */
+async function letIn(vehicle: SimVehicle, key: string, zone: Zone, mine: number) {
+  present.add(key);
+  zoneOf.set(key, zone);
+  world.barrier.in = true;
+  barrierSound(true);
+  await sleep(850);
+  guard(mine);
+  void onSite(vehicle, zone, mine);
+  await sleep(1500);
+  world.barrier.in = false;
+}
+
+// ---------- storingen: stroom en een defecte slagboom ----------
+
+export type Fault = 'geen' | 'stroom' | 'defect';
+
+function applyFault() {
+  const { power, gateDefect } = get();
+  // Bij een storing staat de uitgang open: niemand mag vast komen te zitten.
+  world.fault = power === 'uit' || gateDefect;
+  world.barrier.out = world.fault;
+}
+
+function reportFault(on: boolean, cause: 'stroom' | 'defect') {
+  if (get().online) api.safety(on, cause).catch(() => { /* de slagboom werkt ook zonder dit logboek */ });
+}
+
+/** Zet een storing aan of uit in de simulatie. */
+export function setFault(fault: Fault) {
+  const { power, gateDefect } = get();
+  const hadPower = power !== 'net';
+  const wantsPower = fault === 'stroom';
+  if (hadPower && !wantsPower) reportFault(false, 'stroom');
+  if (gateDefect && fault !== 'defect') reportFault(false, 'defect');
+  if (!hadPower && wantsPower) reportFault(true, 'stroom');
+  if (!gateDefect && fault === 'defect') reportFault(true, 'defect');
+  set({
+    power: wantsPower ? (hadPower ? power : 'accu') : 'net',
+    battery: wantsPower && hadPower ? get().battery : BATTERY_MINUTES,
+    gateDefect: fault === 'defect',
+    notice: fault === 'stroom' ? 'Stroomuitval: de slagboom werkt door op de noodaccu.'
+      : fault === 'defect' ? 'De slagboom is defect. De uitgang staat open; bij de ingang bedient een medewerker hem met de hand.'
+        : 'De storing is voorbij. Alles werkt weer normaal.',
+  });
+  applyFault();
+  if (hadPower && !wantsPower && get().online) void flushQueue('De stroom is terug');
+}
+
+function updatePower(minutes: number) {
+  if (get().power !== 'accu') return;
+  const battery = Math.max(0, get().battery - minutes);
+  if (battery > 0) {
+    set({ battery });
+    return;
+  }
+  set({ battery: 0, power: 'uit', notice: 'De noodaccu is leeg. Camera en slagboom zijn uit: een medewerker handelt de ingang met de hand af.' });
+  chime();
+  applyFault();
 }
 
 // ---------- intercom ----------
@@ -529,6 +671,15 @@ export function toggleWindows() {
   bumpVehicleControls();
 }
 
+/** Zwaailicht en sirene van de hulpdienst aan of uit. */
+export function toggleSiren() {
+  const vehicle = playerVehicle();
+  if (!vehicle || !EMERGENCY_TYPES.includes(vehicle.type)) return;
+  vehicle.siren = !vehicle.siren;
+  setSiren(vehicle.siren);
+  bumpVehicleControls();
+}
+
 export function honk() {
   const vehicle = playerVehicle();
   if (!vehicle) return;
@@ -539,6 +690,26 @@ export function honk() {
 
 // ---------- één passage ----------
 
+/** Geen stroom: geen camera en geen intercom. Een medewerker controleert de lokale lijst en opent met de hand. */
+async function arriveWithoutPower(sc: Scenario, vehicle: SimVehicle, mine: number) {
+  const key = plateKey(sc.plate);
+  const minute = world.minute;
+  const local = decideLocal(get().permits, sc, minute);
+  const open = await ring({
+    plate: sc.plate, country: sc.country, holder: local.holder, since: performance.now(), manual: 'stroom',
+    reason: local.open ? `Volgens de lokale lijst mag dit voertuig binnen: ${lowerFirst(local.reason)}` : `Volgens de lokale lijst niet: ${lowerFirst(local.reason)}`,
+    message: 'De slagboom doet het niet. Kunt u mij helpen?',
+  });
+  guard(mine);
+  if (!open) {
+    await drive(vehicle, ROAD.spawnIn, 2600);
+    removeVehicle(vehicle);
+    return;
+  }
+  queueOffline(sc, minute, true, true, 'Met de hand geopend tijdens stroomuitval');
+  await letIn(vehicle, key, zoneFor(local.category), mine);
+}
+
 async function arrive(sc: Scenario, vehicle: SimVehicle, mine: number) {
   const key = plateKey(sc.plate);
   const model = sc.model ?? VEHICLE_MODEL[sc.type];
@@ -547,6 +718,10 @@ async function arrive(sc: Scenario, vehicle: SimVehicle, mine: number) {
   guard(mine);
   // Bij ijzel of te veel sneeuw blijft de slagboom dicht: het voertuig wacht tot hij is vrijgemaakt.
   await gateFree(mine, vehicle);
+  if (!vehicle.player && get().power === 'uit') {
+    await arriveWithoutPower(sc, vehicle, mine);
+    return;
+  }
   const minute = world.minute;
   const heavy = WEATHER[get().weather].read[1] > 2;
   set({
@@ -603,8 +778,19 @@ async function arrive(sc: Scenario, vehicle: SimVehicle, mine: number) {
       guard(mine);
     }
   }
-  if (!remote) queueOffline(scanned, minute, open, manual, reason);
+  // AVG: een geweigerd kenteken wordt niet bewaard, dus ook niet later doorgestuurd.
+  if (!remote && open) queueOffline(scanned, minute, open, manual, reason);
   if (open) await gateFree(mine, vehicle);
+  if (open && !vehicle.player && get().gateDefect) {
+    await ring({
+      plate: sc.plate, country: sc.country, holder: result.holder, since: performance.now(), manual: 'defect',
+      reason: 'Toegang is goedgekeurd, maar de slagboom beweegt niet', message: 'De slagboom gaat niet open.',
+    });
+    guard(mine);
+  }
+  // Tot waar dit voertuig mag. Las de camera het kenteken niet, dan geldt wat bij het genoemde kenteken hoort.
+  const known = misread ? get().permits.find((p) => p.plate_key === key) : undefined;
+  const zone = zoneFor(known?.category ?? result.category);
 
   if (vehicle.player) {
     // De gebruiker rijdt zelf: de slagboom blijft open tot de auto erdoor is.
@@ -620,10 +806,13 @@ async function arrive(sc: Scenario, vehicle: SimVehicle, mine: number) {
       return;
     }
     present.add(key);
+    zoneOf.set(key, zone);
     world.barrier.in = true;
     vehicle.cleared = true;
     barrierSound(true);
-    set({ driveMessage: 'De slagboom is open. Rijd door naar de camping.' });
+    set({ driveMessage: zone === 'camping'
+      ? 'De slagboom is open. Rijd door naar de camping.'
+      : 'De slagboom is open. De bezoekersparkeerplaats ligt links van de weg.' });
     while (get().playerVehicle === vehicle && vehicle.z > -7) {
       await new Promise((done) => setTimeout(done, 150));
       guard(mine);
@@ -631,19 +820,12 @@ async function arrive(sc: Scenario, vehicle: SimVehicle, mine: number) {
     vehicle.cleared = false;
     world.barrier.in = false;
     barrierSound(false);
-    if (get().playerVehicle === vehicle) set({ driveMessage: 'Welkom op de camping. Via de rechterbaan (UIT) rijd je het terrein weer af.' });
+    if (get().playerVehicle === vehicle) set({ driveMessage: zone === 'camping' ? 'Welkom. Via de baan UIT rijd je het terrein weer af.' : 'Welkom. Parkeer op de grote parkeerplaats links van de weg.' });
     return;
   }
 
   if (open) {
-    present.add(key);
-    world.barrier.in = true;
-    barrierSound(true);
-    await sleep(850);
-    guard(mine);
-    void drive(vehicle, ROAD.endIn, 3600).then(() => removeVehicle(vehicle));
-    await sleep(1500);
-    world.barrier.in = false;
+    await letIn(vehicle, key, zone, mine);
   } else {
     await drive(vehicle, ROAD.spawnIn, 2600); // achteruit terug naar de weg
     removeVehicle(vehicle);
@@ -664,7 +846,7 @@ async function depart(sc: Scenario, vehicle: SimVehicle, mine: number) {
   guard(mine);
   void drive(vehicle, ROAD.endOut, 3200).then(() => removeVehicle(vehicle));
   await sleep(1500);
-  world.barrier.out = false;
+  world.barrier.out = world.fault;
 }
 
 async function run(sc: Scenario, mine: number) {
@@ -675,10 +857,12 @@ async function run(sc: Scenario, mine: number) {
   const vehicle: SimVehicle = {
     id: nextId++, plate: sc.plate, country: sc.country, type: sc.type, color: sc.color,
     model: sc.model ?? (sc.type === 'auto' ? CAR_MODELS[nextId % CAR_MODELS.length] : VEHICLE_MODEL[sc.type]),
-    lane: sc.dir, z: sc.dir === 'in' ? ROAD.spawnIn : ROAD.spawnOut,
+    lane: sc.dir,
+    // Wie alleen op de parkeerplaats mocht, vertrekt ook daarvandaan.
+    z: sc.dir === 'in' ? ROAD.spawnIn : zoneOf.get(plateKey(sc.plate)) === 'parkeren' ? PARKING.z : ROAD.spawnOut,
   };
   set((s) => ({ vehicles: [...s.vehicles, vehicle] }));
-  const voice = carVoice(sc.type === 'ambulance' ? 'sirene' : sc.type === 'auto' ? (vehicle.model === 'Tesla Model 3' ? 'elektrisch' : 'auto') : 'zwaar');
+  const voice = carVoice(EMERGENCY_TYPES.includes(sc.type) ? 'sirene' : sc.type === 'auto' ? (vehicle.model === 'Tesla Model 3' ? 'elektrisch' : 'auto') : 'zwaar');
   if (voice) voiceOf.set(vehicle, voice);
   try {
     if (sc.dir === 'out') {
@@ -809,6 +993,7 @@ function tick() {
   if (minute !== get().minute) set({ minute });
   updateAmbience(daylight(world.minute));
   updateWeather((0.1 / SECONDS_PER_MINUTE) * world.speed);
+  updatePower((0.1 / SECONDS_PER_MINUTE) * world.speed);
   if (get().mode !== 'simulatie') return;
   while (deck.length && deck[0].at <= world.minute) plan(deck.shift()!);
 
@@ -824,30 +1009,46 @@ export async function startShift(mode: SessionMode = 'simulatie') {
   stopClock();
   epoch++;
   answerCall = null;
-  offlineQueue = [];
   dayPaused = false;
   world.minute = SHIFT_START;
   world.speed = 1;
-  world.barrier.in = world.barrier.out = false;
+  world.barrier.in = world.barrier.out = world.fault = false;
+  zoneOf.clear();
   world.beam.in = false;
   resetWeather();
   resetPlayer();
   silenceAll();
+  const permitsBefore = get().permits;
   set({ ...fresh, mode });
 
-  try {
-    await api.reset();
-    const [permits, presence] = await Promise.all([api.permits(), api.presence()]);
+  const begin = (permits: Permit[], presence: PresenceRow[]) => {
     present.clear();
-    presence.forEach((p) => present.add(p.plate_key));
+    presence.forEach((p) => {
+      present.add(p.plate_key);
+      zoneOf.set(p.plate_key, zoneFor(p.category));
+    });
     deck = mode === 'simulatie' ? buildDeck(permits, new Set(present)) : [];
     set({ permits, presence, log: [], phase: 'playing' });
     startAmbience();
     updateAmbience(daylight(world.minute));
     timer = window.setInterval(tick, 100);
+  };
+
+  try {
+    await api.reset();
+    const [permits, presence] = await Promise.all([api.permits(), api.presence()]);
+    offlineQueue = [];
+    saveLocal({ permits, queue: [] });
+    begin(permits, presence);
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
+    if (error instanceof ApiError && error.status < 500) {
       set({ user: null, phase: 'login' });
+      return;
+    }
+    // Server weg: met de lokale kentekenlijst draait de slagboom gewoon door.
+    if (permitsBefore.length) {
+      set({ online: false, pendingSync: offlineQueue.length, notice: 'De server is niet bereikbaar. De slagboom werkt met de lokale kentekenlijst.' });
+      begin(permitsBefore, []);
       return;
     }
     set({ phase: 'ready', notice: 'De dienst kon niet starten: de server is niet bereikbaar.' });
@@ -867,7 +1068,6 @@ let playerBusy = false;
 let exitOpen = false;
 /** De bocht waarvoor richting is aangegeven, is ingezet. */
 let turning = false;
-
 function resetPlayer() {
   playerChecked = playerBusy = exitOpen = turning = false;
   chooseLine = null;
@@ -878,7 +1078,7 @@ function resetPlayer() {
 }
 
 /** Start een rit: de auto staat op de oprit, met de neus naar de camping. */
-export function startDriving(plateInput = 'T-902-BZ', model = 'Volkswagen Golf', color = '#b8322a') {
+export function startDriving(plateInput = 'T-902-BZ', model = 'Volkswagen Golf', color = '#b8322a', type: VehicleType = 'auto') {
   if (get().phase !== 'playing' || get().mode !== 'zelf_rijden' || get().playerVehicle) return;
   // Een kenteken uit de database wordt precies zo overgenomen; een zelf getypt kenteken wordt eerst opgeschoond.
   const permit = get().permits.find((item) => item.plate_key === plateKey(plateInput));
@@ -887,9 +1087,15 @@ export function startDriving(plateInput = 'T-902-BZ', model = 'Volkswagen Golf',
     set({ driveMessage: 'Kies een kenteken uit de lijst of vul er zelf een in, bijvoorbeeld T-902-BZ.' });
     return;
   }
+  // Een zelf getypt kenteken moet een echt Nederlands kenteken kunnen zijn (regels van de RDW).
+  const problem = permit ? null : dutchPlateProblem(plate);
+  if (problem) {
+    set({ driveMessage: problem });
+    return;
+  }
   const vehicle: SimVehicle = {
-    id: nextId++, plate: permit?.plate ?? plate, country: permit?.country ?? 'NL',
-    type: 'auto', color,
+    id: nextId++, plate: permit?.plate ?? formatPlate(plate, 'NL'), country: permit?.country ?? 'NL',
+    type, color,
     model, player: true, offset: 0, indicator: null, windowsOpen: false, hornUntil: 0,
     lane: 'in', z: 46, speed: 0, heading: 0, steer: 0, odo: 0, cleared: false,
   };
@@ -946,11 +1152,11 @@ const LANE_X: Record<Direction, number> = { in: LANE_IN, out: -LANE_IN };
 
 /** De ruimte die een voertuig op de grond inneemt. */
 function footprint(vehicle: SimVehicle, x: number, z: number, heading: number): Box {
-  if (vehicle.type === 'auto') {
+  if (hasCarBody(vehicle.type)) {
     const spec = specOf(vehicle.model);
     return { x, z, halfW: spec.W / 2, halfL: spec.L / 2, turn: heading };
   }
-  return { x, z, halfW: vehicle.type === 'vrachtwagen' ? 1.2 : 1.03, halfL: VEHICLE_LENGTH[vehicle.type] / 2, turn: heading };
+  return { x, z, halfW: vehicle.type === 'vrachtwagen' || vehicle.type === 'brandweer' ? 1.2 : 1.03, halfL: VEHICLE_LENGTH[vehicle.type] / 2, turn: heading };
 }
 
 const boxOf = (vehicle: SimVehicle): Box => (vehicle.player
@@ -1001,6 +1207,15 @@ function blocked(x: number, z: number, heading: number, vehicle: SimVehicle): bo
 
 export interface DriveInput { throttle: number; steer: number; brake: boolean }
 
+/** Wat het voertuig technisch haalt, in meter per seconde. */
+const TOP_SPEED = 16.5;
+
+/** Maximumsnelheid in km/u: 30 op de weg en de oprit, 15 op het terrein. Hulpdiensten hebben geen limiet (null). */
+export function speedLimit(z: number, type: VehicleType = 'auto'): number | null {
+  if (EMERGENCY_TYPES.includes(type)) return null;
+  return z < 0 ? 15 : 30;
+}
+
 /** Eén stap van de rijsimulatie: gas, rem, sturen en botsen. Wordt elk beeld aangeroepen. */
 export function stepPlayer(delta: number, input: DriveInput) {
   const vehicle = get().playerVehicle;
@@ -1013,7 +1228,11 @@ export function stepPlayer(delta: number, input: DriveInput) {
   else if (input.throttle > 0) speed += (speed < 0 ? 9 : 3.4 * (1 - speed / 17)) * dt;
   else if (input.throttle < 0) speed -= (speed > 0.3 ? 9 : 2.4) * dt;
   else speed -= Math.sign(speed) * Math.min(Math.abs(speed), 1.1 * dt);
-  speed = Math.max(-4.5, Math.min(16.5, speed));
+  // De auto houdt zich aan de maximumsnelheid. Rijd je het terrein op, dan remt hij rustig af naar 15 km/u.
+  const allowed = speedLimit(vehicle.z, vehicle.type);
+  const limit = allowed === null ? TOP_SPEED : allowed / 3.6;
+  if (speed > limit) speed = Math.max(limit, speed - 5 * dt);
+  speed = Math.max(-Math.min(4.5, limit), speed);
 
   // Het stuur draait soepel mee en veert terug; bij hogere snelheid stuurt de auto minder scherp in.
   const steer = (vehicle.steer ?? 0) + (input.steer - (vehicle.steer ?? 0)) * Math.min(1, dt * (input.steer ? 4 : 6));
@@ -1097,13 +1316,18 @@ function leave(vehicle: SimVehicle) {
 }
 
 /** De gebruiker stuurt zelf een voertuig naar de slagboom. */
-export function sendCustom(plateInput: string): string {
+export function sendCustom(plateInput: string, country?: Country): string {
   if (get().phase !== 'playing') return 'Start eerst een simulatie; daarna kan dit kenteken naar de slagboom.';
+  // Bij zelf rijden rijd alleen jij: er komen geen andere auto's naar de slagboom.
+  if (get().mode !== 'simulatie') return 'Bij zelf rijden komen er geen andere auto’s. Kies "Automatische kentekenherkenning" om auto’s te laten aankomen.';
   const plate = plateInput.trim().toUpperCase().replace(/\s+/g, ' ');
   if (!/^[A-Z0-9][A-Z0-9 -]{1,12}[A-Z0-9]$/.test(plate)) return 'Vul een kenteken in van 3 tot 14 letters, cijfers of streepjes.';
   const permit = get().permits.find((p) => p.plate_key === plateKey(plate));
+  // Een Nederlands kenteken dat de RDW zo nooit uitgeeft, kan niet aankomen (de camera gebruikt dezelfde regels).
+  const problem = !permit && country === 'NL' ? dutchPlateProblem(plate) : null;
+  if (problem) return problem;
   plan({
-    at: world.minute, dir: 'in', plate: permit?.plate ?? plate, country: permit?.country ?? 'NL',
+    at: world.minute, dir: 'in', plate: permit?.plate ?? plate, country: permit?.country ?? country ?? 'NL',
     type: permit?.vehicle_type ?? 'auto', model: permit?.vehicle_type === 'auto' ? CAR_MODELS[Math.floor(Math.random() * CAR_MODELS.length)] : undefined,
     color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
   });
@@ -1120,8 +1344,16 @@ export async function boot() {
   try {
     const user = await api.me();
     const permits = await api.permits();
+    saveLocal({ user, permits });
     set({ user, permits, phase: 'ready' });
-  } catch {
+  } catch (error) {
+    // Server weg (geen sessieprobleem): verder met de lokale kopie, ook na opnieuw laden van de pagina.
+    const local = !(error instanceof ApiError) || error.status >= 500 ? loadLocal() : null;
+    if (local) {
+      offlineQueue = local.queue;
+      set({ user: local.user, permits: local.permits, online: false, pendingSync: local.queue.length, phase: 'ready', notice: 'De server is niet bereikbaar. De slagboom werkt met de lokale kentekenlijst.' });
+      return;
+    }
     set({ phase: 'login' });
   }
 }
@@ -1138,5 +1370,7 @@ export async function logout() {
   resetPlayer();
   silenceAll();
   stopAmbience();
+  clearLocal();
+  offlineQueue = [];
   set({ user: null, phase: 'login', ...fresh });
 }

@@ -57,7 +57,9 @@ services:
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-beheer@example.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?Zet PGADMIN_PASSWORD in .env}
+      # Niet verplicht gemaakt: anders start de rest van de stack ook niet als dit leeg is.
+      # Zonder wachtwoord weigert pgAdmin zelf te starten.
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-}
     volumes:
       - pgadmindata:/var/lib/pgadmin
       # De database staat alvast in de lijst; het wachtwoord (POSTGRES_PASSWORD) vul je zelf in.
@@ -67,6 +69,18 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
+
+  # Tijdelijke https-link zodat het team de site kan openen. Start alleen als je erom vraagt:
+  #   docker compose --profile team up -d tunnel
+  #   docker compose logs tunnel       -> daar staat de link (https://....trycloudflare.com)
+  # Alleen de website gaat naar buiten; de database en pgAdmin niet. De link werkt zolang deze computer aan staat.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["team"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://frontend:80
+    depends_on:
+      - frontend
 
 volumes:
   dbdata:

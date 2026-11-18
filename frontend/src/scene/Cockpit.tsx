@@ -4,7 +4,7 @@
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import { CanvasTexture, DoubleSide, MeshPhysicalMaterial, MeshStandardMaterial, Quaternion, SRGBColorSpace, Vector3, type Group } from 'three';
-import type { SimVehicle } from '../sim/engine';
+import { speedLimit, type SimVehicle } from '../sim/engine';
 import { cabinOf, SILL, specOf } from './Car';
 import { chromeMaterial } from './parts';
 
@@ -89,8 +89,9 @@ export function Interior({ vehicle, full = false }: { vehicle: SimVehicle; full?
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#1d2733';
     ctx.beginPath(); ctx.arc(256, 150, 118, Math.PI, 2 * Math.PI); ctx.stroke();
-    ctx.strokeStyle = kmh > 30 ? '#ff5a4d' : '#4fd1c5';
-    ctx.beginPath(); ctx.arc(256, 150, 118, Math.PI, Math.PI * (1 + Math.min(1, kmh / 80))); ctx.stroke();
+    const limit = speedLimit(vehicle.z, vehicle.type);
+    ctx.strokeStyle = limit !== null && kmh > limit ? '#ff5a4d' : '#4fd1c5';
+    ctx.beginPath(); ctx.arc(256, 150, 118, Math.PI, Math.PI * (1 + Math.min(1, kmh / (limit === null ? 80 : 40)))); ctx.stroke();
     ctx.fillStyle = '#f2f6fa';
     ctx.textAlign = 'center';
     ctx.font = '700 92px "Barlow Condensed", Arial, sans-serif';
@@ -106,7 +107,7 @@ export function Interior({ vehicle, full = false }: { vehicle: SimVehicle; full?
   const half = spec.W / 2;
   const dashZ = spec.cowl - 0.28;      // midden van het dashboard
   const dashTop = spec.belt + 0.03;
-  const wheelAt: [number, number, number] = [0.37, dashTop - 0.2, spec.cowl - 0.62];
+  const wheelAt: [number, number, number] = [0.37, dashTop - 0.14, spec.cowl - 0.68];
   const cabin = cabinOf(spec);
   const inner = spec.W - 0.14;                 // breedte tussen de portieren
   const seatZ = spec.cowl - 1.04;              // de bestuurder zit hier (zie eyeOf)

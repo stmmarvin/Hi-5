@@ -26,12 +26,19 @@ const between = (a: number, b: number) => a + Math.floor(Math.random() * (b - a 
 const pick = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)];
 const shuffle = <T,>(list: T[]): T[] => [...list].sort(() => Math.random() - 0.5);
 
+/** Een willekeurig kenteken: meestal Nederlands, soms uit een ander Europees land. */
 export function randomPlate(): { plate: string; country: Country } {
   const letters = 'BDFGHJKLNPRSTVXZ';
-  const l = () => letters[Math.floor(Math.random() * letters.length)];
-  const digits = (n: number) => String(Math.floor(Math.random() * 10 ** n)).padStart(n, '0');
-  if (Math.random() < 0.3) return { plate: `${l()}${l()} ${l()}${l()} ${digits(3)}`, country: 'D' };
-  return { plate: `${l()}-${digits(3)}-${l()}${l()}`, country: 'NL' };
+  const l = (n = 1) => Array.from({ length: n }, () => letters[Math.floor(Math.random() * letters.length)]).join('');
+  const d = (n: number) => String(Math.floor(Math.random() * 10 ** n)).padStart(n, '0');
+  const r = Math.random();
+  if (r < 0.2) return { plate: `${l(2)} ${l(2)} ${d(3)}`, country: 'D' };
+  if (r < 0.3) return { plate: `${1 + Math.floor(Math.random() * 9)}-${l(3)}-${d(3)}`, country: 'B' };
+  if (r < 0.36) return { plate: `${l(2)}-${d(3)}-${l(2)}`, country: 'F' };
+  if (r < 0.41) return { plate: `${l(2)}${d(2)} ${l(3)}`, country: 'GB' };
+  if (r < 0.45) return { plate: `${l(2)} ${d(5)}`, country: 'PL' };
+  if (r < 0.48) return { plate: `${l(2)} ${d(4)}`, country: 'L' };
+  return { plate: `${l()}-${d(3)}-${l(2)}`, country: 'NL' };
 }
 
 export function buildDeck(permits: Permit[], presentKeys: Set<string>): Scenario[] {
@@ -139,7 +146,8 @@ export function buildDeck(permits: Permit[], presentKeys: Set<string>): Scenario
   });
 
   // Hulpdienst.
-  const ambulance = { plate: `${between(10, 19)}-AMB-${between(1, 9)}`, country: 'NL' as Country, type: 'ambulance' as VehicleType, color: '#f4d21f' };
+  // Volgens de RDW geen klinkers op een Nederlands kenteken: dus niet AMB.
+  const ambulance = { plate: `${between(10, 19)}-GHR-${between(1, 9)}`, country: 'NL' as Country, type: 'ambulance' as VehicleType, color: '#f4d21f' };
   deck.push({ at: t(17, 45), dir: 'in', ...ambulance });
   deck.push({ at: t(18, 15), dir: 'out', ...ambulance });
 

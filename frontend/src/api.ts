@@ -9,6 +9,8 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api${path}`, {
     credentials: 'same-origin',
+    // Geen antwoord binnen 8 seconden telt als storing: de slagboom werkt dan lokaal door.
+    signal: AbortSignal.timeout(8000),
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -41,7 +43,8 @@ export const api = {
 
   permits: () => request<Permit[]>('/permits'),
   addPermit: (permit: NewPermit) => post<Permit>('/permits', permit),
-  removePermit: (id: number) => request<void>(`/permits/${id}`, { method: 'DELETE' }),
+  // Via POST: niet elke proxy of hosting laat DELETE-verzoeken door.
+  removePermit: (id: number) => post<void>(`/permits/${id}/delete`),
 
   presence: () => request<PresenceRow[]>('/presence'),
   passages: (limit = 60) => request<PassageRow[]>(`/passages?limit=${limit}`),

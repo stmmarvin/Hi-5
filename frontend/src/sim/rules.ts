@@ -8,13 +8,21 @@ export const plateKey = (plate: string) => plate.toUpperCase().replace(/[^A-Z0-9
 
 const LABEL = { staff: 'Medewerker', supplier: 'Leverancier' } as const;
 
+/** Hulpdiensten mogen altijd naar binnen. */
+export const EMERGENCY_TYPES: readonly VehicleType[] = ['politie', 'ambulance', 'brandweer'];
+
+export type Zone = 'camping' | 'parkeren';
+
+/** Waar iemand mag komen: gasten, medewerkers en hulpdiensten overal, de rest alleen op de parkeerplaats. */
+export const zoneFor = (category: string): Zone => (['guest', 'staff', 'emergency'].includes(category) ? 'camping' : 'parkeren');
+
 export function decideLocal(
   permits: Permit[],
   vehicle: { plate: string; type: VehicleType },
   minute: number,
 ): ScanResult {
   const base = { passage_id: null };
-  if (vehicle.type === 'ambulance') {
+  if (EMERGENCY_TYPES.includes(vehicle.type)) {
     return { ...base, open: true, code: 'emergency', reason: 'Hulpdienst, mag altijd door', holder: 'Hulpdienst', category: 'emergency' };
   }
   const key = plateKey(vehicle.plate);

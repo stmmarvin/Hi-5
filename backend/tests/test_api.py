@@ -162,7 +162,42 @@ def test_offline_passages_synchroniseren(receptie):
     assert r.json() == {"synced": 2}
     present = {p["plate"] for p in receptie.get("/api/presence").json()}
     assert "T-902-BZ" in present and "ZZ-999-Z" not in present
-    assert all(p["offline"] for p in receptie.get("/api/passages").json())
+    passages = receptie.get("/api/passages").json()
+    assert all(p["offline"] for p in passages)
+    # AVG: wie zonder internet is geweigerd, wordt niet opgeslagen.
+    assert "ZZ-999-Z" not in {p["plate"] for p in passages}
+
+
+def test_geweigerd_kenteken_wordt_niet_bewaard(receptie, bert):
+    result = scan(receptie, "ZZ-999-Z")
+    assert any(p["plate"] == "ZZ-999-Z" for p in receptie.get("/api/passages").json())  # wacht op de receptie
+    r = receptie.post(f"/api/gate/passages/{result['passage_id']}/decision", json={"open": False})
+    assert r.status_code == 200 and r.json()["outcome"] == "denied"
+    # AVG: na een weigering staat het kenteken nergens meer, ook niet in het auditlog.
+    assert "ZZ-999-Z" not in plates(receptie, "/api/passages") | plates(receptie, "/api/presence")
+    audit = bert.get("/api/audit").json()
+    weigering = next(a for a in audit if a["action"] == "intercom_geweigerd")
+    assert "ZZ" not in weigering["detail"]
+    assert receptie.post(f"/api/gate/passages/{result['passage_id']}/decision", json={"open": True}).status_code == 404
+
+
+def test_storing_komt_in_het_auditlog(bert):
+    assert bert.post("/api/gate/safety", json={"locked": True, "cause": "stroom"}).status_code == 204
+    assert any(a["action"] == "slagboom_vergrendeld" and a["detail"] == "stroom" for a in bert.get("/api/audit").json())
+
+
+def test_logboek_houdt_bewaartermijn_aan(receptie):
+    scan(receptie, "T-902-BZ", at="2026-08-01T10:00:00")
+    scan(receptie, "AA-11-BB", vehicle_type="ambulance", at="2026-08-28T09:00:00")
+    assert "T-902-BZ" in plates(receptie, "/api/passages")
+    scan(receptie, "AA-11-BB", vehicle_type="ambulance", at="2026-08-29T10:30:00")
+    assert "T-902-BZ" not in plates(receptie, "/api/passages")
+
+
+def test_onbeantwoorde_oproep_verdwijnt_na_24_uur(receptie):
+    scan(receptie, "ZZ-999-Z", at="2026-08-01T10:00:00")
+    scan(receptie, "T-902-BZ", at="2026-08-02T10:30:00")
+    assert "ZZ-999-Z" not in plates(receptie, "/api/passages")
 
 
 # ---------- beheer ----------
@@ -176,18 +211,22 @@ def test_beheerder_beheert_kentekenlijst(bert):
     assert bert.post("/api/permits", json={"plate": "KX481P", "holder": "Dubbel", "category": "staff"}).status_code == 409
     assert scan(bert, "KX-481-P")["open"]
     assert bert.delete(f"/api/permits/{r.json()['id']}").status_code == 204
+    # Dezelfde verwijdering via POST, voor hosting die DELETE niet doorlaat.
+    r = bert.post("/api/permits", json={"plate": "KX-481-P", "holder": "Opnieuw", "category": "staff"})
+    assert bert.post(f"/api/permits/{r.json()['id']}/delete").status_code == 204
+    assert bert.post(f"/api/permits/{r.json()['id']}/delete").status_code == 404
     actions = [a["action"] for a in bert.get("/api/audit").json()]
     assert "kenteken_toegevoegd" in actions and "kenteken_verwijderd" in actions
 
 
 def test_gast_toevoegen_vereist_reservering(bert):
-    assert bert.post("/api/permits", json={"plate": "AB-123-C", "holder": "Familie Test", "category": "guest"}).status_code == 422
+    assert bert.post("/api/permits", json={"plate": "KB-123-D", "holder": "Familie Test", "category": "guest"}).status_code == 422
     r = bert.post("/api/permits", json={
-        "plate": "AB-123-C", "holder": "Familie Test", "category": "guest",
+        "plate": "KB-123-D", "holder": "Familie Test", "category": "guest",
         "pitch": "plek 2", "arrival": "2026-08-01", "departure": "2026-08-05",
     })
     assert r.status_code == 201
-    assert scan(bert, "AB-123-C")["open"]
+    assert scan(bert, "KB-123-D")["open"]
 
 
 def test_reset(receptie):
@@ -222,3 +261,14 @@ def test_onleesbaar_kenteken_gaat_via_de_intercom(receptie):
     assert not result["open"]
     r = receptie.post(f"/api/gate/passages/{result['passage_id']}/decision", json={"open": True})
     assert r.status_code == 200 and r.json()["manual"] and r.json()["outcome"] == "granted"
+
+
+# ---------- regels van de RDW ----------
+
+def test_nederlands_kenteken_volgt_de_rdw(bert):
+    for plate in ("AB-12-CD", "T-90C-BZ", "K-123-QB", "SS-12-BB", "VVD-12-B", "T-902-BZX"):
+        r = bert.post("/api/permits", json={"plate": plate, "holder": "Test", "category": "staff"})
+        assert r.status_code == 422, plate
+    assert bert.post("/api/permits", json={"plate": "KX-481-P", "holder": "Test", "category": "staff"}).status_code == 201
+    # Een buitenlands kenteken volgt die regels niet.
+    assert bert.post("/api/permits", json={"plate": "AB 123 CD", "country": "I", "holder": "Famiglia Rossi", "category": "staff"}).status_code == 201

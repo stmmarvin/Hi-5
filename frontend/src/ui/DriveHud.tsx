@@ -1,6 +1,9 @@
 import { useState, type PointerEvent } from 'react';
-import { backToMenu, honk, pressPlayerIntercom, toggleIndicator, toggleMute, toggleView, toggleWindows, useGame } from '../sim/engine';
+import { backToMenu, honk, pressPlayerIntercom, speedLimit, toggleIndicator, toggleMute, toggleSiren, toggleView, toggleWindows, useGame } from '../sim/engine';
+import { EMERGENCY_TYPES } from '../sim/rules';
 import { held } from '../sim/input';
+import { AiCam } from './AiCam';
+import { MiniMap } from './MiniMap';
 
 /** Knop die een rijtoets vasthoudt zolang je hem ingedrukt houdt (voor telefoon en tablet). */
 function Pedal({ hold, label, children }: { hold: string; label: string; children: string }) {
@@ -30,9 +33,17 @@ export function DriveHud() {
   const needsIntercom = useGame((s) => s.playerNeedsIntercom);
   useGame((s) => s.controls); // opnieuw tekenen na een knop in de auto
   if (!vehicle) return null;
+  const emergency = EMERGENCY_TYPES.includes(vehicle.type);
+  const limit = speedLimit(vehicle.z, vehicle.type);
 
   return (
     <>
+      {/* Rechts: hoe de camera bij de ingang je kenteken herkent, en waar je rijdt. */}
+      <div className="rij-zijkant">
+        <AiCam />
+        <MiniMap />
+      </div>
+
       {(message || needsIntercom) && (
         <div className="rij-melding" role="status">
           {message && <p>{message}</p>}
@@ -48,10 +59,11 @@ export function DriveHud() {
           <p><kbd>spatie</kbd> hard remmen</p>
           <p><kbd>Z</kbd><kbd>C</kbd> richting aangeven</p>
           <p><kbd>V</kbd> camera binnen of buiten</p>
-          <p><kbd>slepen</kbd> rondkijken (camera buiten)</p>
+          <p><kbd>slepen</kbd> sturen (camera binnen), rondkijken (camera buiten)</p>
           <p><kbd>scrollen</kbd> in- en uitzoomen (camera buiten)</p>
           <p><kbd>R</kbd> raam</p>
           <p><kbd>H</kbd> claxon</p>
+          {emergency && <p><kbd>L</kbd> zwaailicht en sirene</p>}
           <p><kbd>E</kbd> intercom</p>
           <p><kbd>M</kbd> geluid</p>
           <button type="button" className="knop klein" onClick={() => setHelp(false)}>Sluit</button>
@@ -70,11 +82,13 @@ export function DriveHud() {
       <div className="rij-hud" aria-label="Autobediening">
         <button type="button" className={`rij-knop pijl${vehicle.indicator === 'left' ? ' knippert' : ''}`} aria-pressed={vehicle.indicator === 'left'} aria-label="Richting links (Z)" title="Richting links (Z)" onClick={() => toggleIndicator('left')}>◄</button>
         <p className="rij-snelheid"><strong>{speedKmh}</strong><span>km/u</span></p>
+        {limit !== null && <span className="rij-limiet" title={`Maximaal ${limit} km/u`} aria-label={`Maximaal ${limit} km/u`}>{limit}</span>}
         <button type="button" className={`rij-knop pijl${vehicle.indicator === 'right' ? ' knippert' : ''}`} aria-pressed={vehicle.indicator === 'right'} aria-label="Richting rechts (C)" title="Richting rechts (C)" onClick={() => toggleIndicator('right')}>►</button>
         <span className="rij-streep" aria-hidden="true" />
         <button type="button" className="rij-knop" title="Wissel camera (V)" onClick={toggleView}>{view === 'binnen' ? 'Buiten' : 'Binnen'}</button>
         <button type="button" className="rij-knop" title="Raam (R)" aria-pressed={Boolean(vehicle.windowsOpen)} onClick={toggleWindows}>Raam</button>
         <button type="button" className="rij-knop" title="Claxon (H)" onClick={honk}>Toeter</button>
+        {emergency && <button type="button" className="rij-knop sirene" title="Zwaailicht en sirene (L)" aria-pressed={Boolean(vehicle.siren)} onClick={toggleSiren}>Sirene</button>}
         <button type="button" className="rij-knop" title="Geluid (M)" aria-pressed={!muted} onClick={toggleMute}>{muted ? 'Geluid uit' : 'Geluid aan'}</button>
         <button type="button" className="rij-knop" aria-expanded={help} onClick={() => setHelp((value) => !value)}>Hulp</button>
         <button type="button" className="rij-knop stop" onClick={backToMenu}>Stop</button>

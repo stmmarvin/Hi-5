@@ -7,8 +7,11 @@ import { SidePanel } from './ui/SidePanel';
 
 export function App() {
   const phase = useGame((s) => s.phase);
-
-  const [panel, setPanel] = useState(false);
+  const mode = useGame((s) => s.mode);
+  const [open, setPanel] = useState(false);
+  // Het overzicht hoort bij de automatische kentekenherkenning; bij zelf rijden is het er niet.
+  const overview = phase === 'playing' && mode === 'simulatie';
+  const panel = open && overview;
 
   useEffect(() => {
     void boot();
@@ -38,19 +41,14 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar />
+      <TopBar overview={overview} overviewOpen={panel} onOverview={() => setPanel(!panel)} />
       <main className="werkblad">
         <section className="terrein" aria-label="3D-beeld van de oprit">
           <Scene />
           <GateCards />
           <Overlay />
-          {!panel && (
-            <button type="button" className="lade-knop" onClick={() => setPanel(true)} aria-expanded={false}>
-              <span aria-hidden="true">☰</span> Overzicht
-            </button>
-          )}
         </section>
-        <SidePanel open={panel} onClose={() => setPanel(false)} />
+        {overview && <SidePanel open={panel} onClose={() => setPanel(false)} />}
       </main>
     </div>
   );

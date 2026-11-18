@@ -140,6 +140,7 @@ def create_permit(body: schemas.PermitIn, request: Request, user: User = Depends
 
 
 @router.delete("/permits/{permit_id}", status_code=204)
+@router.post("/permits/{permit_id}/delete", status_code=204)  # voor hosting die DELETE niet doorlaat
 def delete_permit(permit_id: int, request: Request, user: User = Depends(require_admin), db: Session = Depends(get_db)):
     permit = db.get(Permit, permit_id)
     if permit is None:
@@ -216,31 +217,44 @@ def intercom_decision(passage_id: int, body: schemas.DecisionIn, request: Reques
         raise HTTPException(409, "Deze oproep is al afgehandeld.")
 
     cause = passage.reason[:1].lower() + passage.reason[1:]
-    passage.outcome = "granted" if body.open else "denied"
+    if not body.open:
+        # AVG: een geweigerd kenteken wordt niet bewaard. De passage verdwijnt en het auditlog noemt geen kenteken.
+        result = schemas.PassageOut.model_validate(passage).model_copy(update={
+            "outcome": "denied", "manual": True, "reason": f"Door receptie geweigerd ({cause})"[:200],
+        })
+        db.delete(passage)
+        audit(db, request, "intercom_geweigerd", cause, user=user)
+        db.commit()
+        return result
+
+    passage.outcome = "granted"
     passage.manual = True
     passage.decided_by = user.id
-    passage.reason = f"{'Door receptie binnengelaten' if body.open else 'Door receptie geweigerd'} ({cause})"[:200]
-    if body.open:
-        if passage.holder == "Onbekend":
-            passage.holder = "Bezoeker"
-        enter(db, passage, db.get(Permit, passage.permit_id) if passage.permit_id else None)
-    audit(db, request, "intercom_open" if body.open else "intercom_geweigerd", f"{passage.plate}: {cause}", user=user)
+    passage.reason = f"Door receptie binnengelaten ({cause})"[:200]
+    if passage.holder == "Onbekend":
+        passage.holder = "Bezoeker"
+    enter(db, passage, db.get(Permit, passage.permit_id) if passage.permit_id else None)
+    audit(db, request, "intercom_open", f"{passage.plate}: {cause}", user=user)
     db.commit()
     return passage
 
 
 @router.post("/gate/safety", status_code=204)
 def gate_safety(body: schemas.SafetyIn, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Bij ijzel of sneeuw rond de slagboom blokkeert het systeem het openen. Dat komt in het auditlog,
-    net als het moment waarop de slagboom weer is vrijgemaakt."""
+    """Vergrendeling door ijzel of sneeuw en storingen (stroom, defecte slagboom) komen in het auditlog,
+    net als het moment waarop ze voorbij zijn."""
     audit(db, request, "slagboom_vergrendeld" if body.locked else "slagboom_vrijgegeven", body.cause, user=user)
     db.commit()
 
 
 @router.post("/gate/sync")
 def sync(body: schemas.SyncIn, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Passages die de slagboom zonder internet zelf heeft afgehandeld, worden alsnog vastgelegd."""
-    for item in sorted(body.items, key=lambda i: i.at):
+    """Passages die de slagboom zonder internet zelf heeft afgehandeld, worden alsnog vastgelegd.
+
+    AVG: wie zonder internet is geweigerd, wordt niet opgeslagen. Alleen binnengelaten voertuigen komen in het logboek.
+    """
+    allowed = [item for item in body.items if item.open]
+    for item in sorted(allowed, key=lambda i: i.at):
         at = item.at.replace(tzinfo=None)
         key = plate_key(item.plate)
         # Opschonen gaat op de klok van het systeem, niet op een tijd die de slagboom zelf meestuurt.
@@ -251,14 +265,13 @@ def sync(body: schemas.SyncIn, request: Request, user: User = Depends(current_us
         passage = Passage(
             occurred_at=at, direction="in", plate_key=key, plate=item.plate, country=item.country,
             vehicle_type=item.vehicle_type, permit_id=permit.id if permit else None, holder=holder,
-            category=category, outcome="granted" if item.open else "denied", manual=item.manual,
+            category=category, outcome="granted", manual=item.manual,
             offline=True, reason=item.reason, decided_by=user.id if item.manual else None,
         )
         db.add(passage)
-        if item.open:
-            enter(db, passage, permit)
+        enter(db, passage, permit)
         db.flush()
-    audit(db, request, "offline_gesynchroniseerd", f"{len(body.items)} passages", user=user)
+    audit(db, request, "offline_gesynchroniseerd", f"{len(allowed)} passages", user=user)
     db.commit()
     return {"synced": len(body.items)}
 

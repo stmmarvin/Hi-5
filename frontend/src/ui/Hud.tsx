@@ -1,13 +1,13 @@
 import { clock, dateLabel, SHIFT_END } from '../sim/clock';
-import { answer, backToMenu, clearGate, closeChat, toggleMute, logout, sayToReception, setOnline, setSpeed, setWeather, startShift, useGame, VEHICLE_NAME, type SessionMode } from '../sim/engine';
+import { answer, backToMenu, clearGate, closeChat, toggleMute, logout, sayToReception, setFault, setOnline, setSpeed, setWeather, startShift, useGame, VEHICLE_NAME, type Fault, type SessionMode } from '../sim/engine';
 import { READ_LIMIT, seconds, WEATHER, WEATHER_ORDER, type Weather } from '../sim/weather';
+import { countryName } from '../sim/plates';
 import { DriveHud } from './DriveHud';
 import { DriveSetup } from './DriveSetup';
 import { Plate } from './Plate';
 
-const COUNTRY_NAME = { NL: 'Nederland', D: 'Duitsland', B: 'België' };
 
-export function TopBar() {
+export function TopBar({ overview, overviewOpen, onOverview }: { overview: boolean; overviewOpen: boolean; onOverview: () => void }) {
   const user = useGame((s) => s.user);
   const phase = useGame((s) => s.phase);
   const minute = useGame((s) => s.minute);
@@ -17,7 +17,10 @@ export function TopBar() {
   const muted = useGame((s) => s.muted);
   const mode = useGame((s) => s.mode);
   const weather = useGame((s) => s.weather);
+  const power = useGame((s) => s.power);
+  const gateDefect = useGame((s) => s.gateDefect);
   const playing = phase === 'playing';
+  const fault: Fault = gateDefect ? 'defect' : power !== 'net' ? 'stroom' : 'geen';
 
   return (
     <header className="kop">
@@ -40,19 +43,35 @@ export function TopBar() {
             </select>
           </label>
         )}
+        {playing && (
+          <label className="schakel">
+            {/* Focus terug naar het beeld: anders werken de rijtoetsen niet meer na het aanklikken. */}
+            <input type="checkbox" checked={!online} onChange={(e) => { void setOnline(!e.target.checked); e.target.blur(); }} />
+            <span>Internet valt uit{pendingSync > 0 ? ` (${pendingSync} wachten)` : ''}</span>
+          </label>
+        )}
         {playing && mode === 'simulatie' && (
           <>
             <button type="button" className="knop klein donker" onClick={() => setSpeed(speed === 1 ? 2 : 1)}>
               {speed === 1 ? 'Dubbele snelheid' : 'Normale snelheid'}
             </button>
             <label className="schakel">
-              <input type="checkbox" checked={!online} onChange={(e) => void setOnline(!e.target.checked)} />
-              <span>Internet valt uit{pendingSync > 0 ? ` (${pendingSync} wachten)` : ''}</span>
+              Storing
+              <select className="weer-keuze" value={fault} onChange={(e) => setFault(e.target.value as Fault)}>
+                <option value="geen">Geen</option>
+                <option value="stroom">Stroom valt uit</option>
+                <option value="defect">Slagboom defect</option>
+              </select>
             </label>
           </>
         )}
       </div>
       <div className="kop-gebruiker">
+        {overview && (
+          <button type="button" className={`kop-overzicht${overviewOpen ? ' actief' : ''}`} aria-expanded={overviewOpen} onClick={onOverview}>
+            <span aria-hidden="true">☰</span> Overzicht
+          </button>
+        )}
         <span>{user?.display_name} ({user?.role})</span>
         <button type="button" className="knop klein donker" onClick={() => void logout()}>Log uit</button>
       </div>
@@ -74,6 +93,9 @@ export function GateCards() {
   const gateLock = useGame((s) => s.gateLock);
   const snowCm = useGame((s) => s.snowCm);
   const weather = useGame((s) => s.weather);
+  const power = useGame((s) => s.power);
+  const battery = useGame((s) => s.battery);
+  const gateDefect = useGame((s) => s.gateDefect);
   if (phase !== 'playing') return null;
   // De intercom filtert wind en regen weg, zodat het gesprek ook bij noodweer verstaanbaar blijft.
   const line = weather === 'helder' ? '' : 'Verbinding helder: de intercom filtert wind en neerslag weg.';
@@ -87,6 +109,13 @@ export function GateCards() {
     <>
       <div className="meldingen" aria-live="polite">
         {!online && <p className="melding geel">Geen internet. De slagboom beslist zelf met de lokale kentekenlijst; het logboek volgt later.</p>}
+        {power === 'accu' && <p className="melding geel">Stroomuitval: de slagboom werkt op de noodaccu, nog {Math.ceil(battery)} minuten.</p>}
+        {(power === 'uit' || gateDefect) && (
+          <p className="melding rood" role="alert">
+            {power === 'uit' ? 'Geen stroom: camera en slagboom zijn uit.' : 'De slagboom is defect.'}
+            {' '}De uitgang staat open. Bij de ingang bedient een medewerker de slagboom met de hand.
+          </p>
+        )}
         {gateLock && (
           <p className="melding rood" role="alert">
             Veiligheidsvergrendeling: {gateLock === 'ijzel' ? 'ijzel op de slagboom' : `${snowCm} cm sneeuw bij de slagboom`}.
@@ -108,7 +137,7 @@ export function GateCards() {
               <p className="kaart-kop">Camera bij de ingang</p>
               <Plate plate={readout.plate} country={readout.country} large />
               <p className="kaart-sub">
-                {readout.model} ({VEHICLE_NAME[readout.type]}), kenteken uit {COUNTRY_NAME[readout.country]}
+                {readout.model} ({VEHICLE_NAME[readout.type]}), kenteken uit {countryName(readout.country)}
                 {readout.holder && readout.holder !== 'Onbekend' ? `. Herkend: ${readout.holder}` : ''}
               </p>
               {readout.status === 'reading' && readout.note && <p className="kaart-sub">{readout.note}</p>}
@@ -150,7 +179,7 @@ export function GateCards() {
 
         {call && (
           <section className="kaart intercom" role="alertdialog" aria-label="Intercom">
-            <p className="kaart-kop">Intercom: de bestuurder belt aan</p>
+            <p className="kaart-kop">{call.manual ? 'Medewerker bij de slagboom' : 'Intercom: de bestuurder belt aan'}</p>
             <p className="citaat">“{call.message}”</p>
             <p className="kaart-sub">
               <Plate plate={call.plate} country={call.country} /> {call.reason}
@@ -158,8 +187,8 @@ export function GateCards() {
               {line && <small className="lijn">{line}</small>}
             </p>
             <div className="rijtje">
-              <button type="button" className="knop goed" onClick={() => answer(true)}>Open slagboom</button>
-              <button type="button" className="knop fout" onClick={() => answer(false)}>Laat niet binnen</button>
+              <button type="button" className="knop goed" onClick={() => answer(true)}>{call.manual ? 'Open met de hand' : 'Open slagboom'}</button>
+              {call.manual !== 'defect' && <button type="button" className="knop fout" onClick={() => answer(false)}>Laat niet binnen</button>}
             </div>
           </section>
         )}
@@ -189,7 +218,7 @@ export function Overlay() {
             </button>
             <button type="button" className="modus-kaart" onClick={() => void startShift('zelf_rijden' satisfies SessionMode)}>
               <strong>Zelf rijden</strong>
-              <span>Stap in, rijd en stuur zelf naar de slagboom, met zicht vanuit de auto en geluid.</span>
+              <span>Rijd zelf naar de slagboom met je eigen auto, of als politie, ambulance of brandweer.</span>
             </button>
           </div>
           <p className="klein-tekst">De simulatie loopt van 06:00 tot {clock(SHIFT_END)}. Sleep in het beeld om rond te kijken.</p>

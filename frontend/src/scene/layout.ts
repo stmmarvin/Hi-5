@@ -17,19 +17,22 @@ export const CARAVANS: { x: number; z: number; turn: number }[] = [
   { x: 26.5, z: -8, turn: 0.35 },
   { x: 29, z: -19, turn: -0.2 },
   { x: -11, z: -29, turn: 1.3 },
-  { x: -27, z: -9, turn: 0.15 },
+  { x: -73, z: -12, turn: 0.15 },
 ];
 
 export const RECEPTION = { x: 14.5, z: -15 };
-export const PARKING = { x: -14, z: -13 };
+/** De grote parkeerplaats voor bezoekers, links van de weg: 2 rijen van 16 vakken met een rijbaan ertussen. */
+export const PARKING = { x: -35, z: -15, width: 59, depth: 22 };
+/** Plek van het parkeerbord, ten opzichte van het midden van de parkeerplaats. */
+export const PARKING_SIGN = { x: 27.5, z: 10.4 };
 /** Lantaarnpalen langs de oprit: aan beide kanten, op deze afstanden. */
 export const LAMP_POSTS = { x: 6.6, z: [30, -22, -48] };
 
 /** Geparkeerde auto's, met hun plek ten opzichte van het midden van de parkeerplaats. */
 export const PARKED: { x: number; z: number; color: string; model: string; plate: string }[] = [
-  { x: -4.5, z: -3.5, color: '#2e5e8c', model: 'Audi RS4 Avant', plate: 'K-553-HV' },
-  { x: 1.5, z: -3.5, color: '#e4e2da', model: 'Volkswagen Golf', plate: 'R-218-DX' },
-  { x: 4.5, z: -3.5, color: '#3b3f45', model: 'Tesla Model 3', plate: 'T-640-NB' },
+  { x: -4.5, z: -8.5, color: '#2e5e8c', model: 'Audi RS4 Avant', plate: 'K-553-HV' },
+  { x: 1.5, z: -8.5, color: '#e4e2da', model: 'Volkswagen Golf', plate: 'R-218-DX' },
+  { x: 4.5, z: -8.5, color: '#3b3f45', model: 'Tesla Model 3', plate: 'T-640-NB' },
 ];
 
 let made: CampLayout | null = null;
@@ -48,7 +51,7 @@ export function campLayout(): CampLayout {
     const z = 50 - random() * 150;
     const onRoad = Math.abs(x) < 12;
     const onYard = x > 4 && x < 30 && z < -3 && z > -30;
-    const onParking = x < -4 && x > -25 && z < -3 && z > -23;
+    const onParking = x < -4 && x > -67 && z < -2 && z > -28;
     const onField = Math.abs(x) > 12 && Math.abs(x) < 46 && z < -32 && z > -66;
     if (onRoad || onYard || onParking || onField || Math.abs(z) < 4) continue;
     trees.push({ x, z, size: 0.85 + random() * 0.6, pine: random() < 0.22 });
@@ -77,7 +80,9 @@ export function campLayout(): CampLayout {
   for (let i = 0; i < 16; i++) {
     shrubs.push({ x: 6.4 + random() * 1.6, z: -3 - i * 1.5, size: 0.6 + random() * 0.5 });
     flowers.push({ x: 6.2 + random() * 2.4, z: -2.4 - i * 1.5, size: 0.7 + random() * 0.4, kind: kinds[i % 3] });
-    shrubs.push({ x: -5.8 - random() * 0.8, z: -3 - i * 1.3, size: 0.55 + random() * 0.4 });
+    // Langs de weg, behalve bij de inrit van de parkeerplaats.
+    const roadside = { x: -5.8 - random() * 0.8, z: -3 - i * 1.3, size: 0.55 + random() * 0.4 };
+    if (Math.abs(roadside.z - PARKING.z) > 5) shrubs.push(roadside);
   }
   for (let x = 9; x < 21; x += 1.4) shrubs.push({ x, z: -24.5 + random() * 0.6, size: 0.8 + random() * 0.4 });
   made = { trees, tents, hedge, shrubs, flowers };

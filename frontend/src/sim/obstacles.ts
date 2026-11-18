@@ -1,7 +1,7 @@
 // Alles waar de zelf bestuurde auto tegenaan kan rijden: gebouwen, caravans, tenten, bomen, palen en
 // geparkeerde auto's. De plekken komen uit scene/layout.ts, dezelfde indeling als de 3D-wereld tekent.
 import { specOf } from '../scene/Car';
-import { campLayout, CARAVANS, LAMP_POSTS, PARKED, PARKING, RECEPTION } from '../scene/layout';
+import { campLayout, CARAVANS, LAMP_POSTS, PARKED, PARKING, PARKING_SIGN, RECEPTION } from '../scene/layout';
 
 /** Rechthoek op de grond. De lengte ligt langs de eigen z-as; `turn` is de draaiing om de y-as. */
 export interface Box { x: number; z: number; halfW: number; halfL: number; turn: number }
@@ -74,7 +74,7 @@ function buildScenery() {
     ...trees.map((tree) => ({ x: tree.x, z: tree.z, r: 0.2 * tree.size + 0.1 })),
     ...LAMP_POSTS.z.flatMap((z) => [-1, 1].map((side) => ({ x: side * LAMP_POSTS.x, z, r: 0.15 }))),
     // paal van het parkeerbord
-    { x: PARKING.x + 7.4, z: PARKING.z + 6.4, r: 0.12 },
+    { x: PARKING.x + PARKING_SIGN.x, z: PARKING.z + PARKING_SIGN.z, r: 0.12 },
     // picknicktafel met parasol op het terras
     { x: RECEPTION.x - 8.6, z: RECEPTION.z + 3.2, r: 1.1 },
     // mensen voor de receptie

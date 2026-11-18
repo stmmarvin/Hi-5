@@ -1,5 +1,6 @@
-export type VehicleType = 'auto' | 'camper' | 'bestelbus' | 'vrachtwagen' | 'ambulance';
-export type Country = 'NL' | 'D' | 'B';
+export type VehicleType = 'auto' | 'camper' | 'bestelbus' | 'vrachtwagen' | 'ambulance' | 'brandweer' | 'politie';
+/** Landcode van de blauwe band, bijvoorbeeld NL, D of PL. De lijst staat in sim/plates.ts. */
+export type Country = string;
 export type Direction = 'in' | 'out';
 
 export interface User {
@@ -73,6 +74,7 @@ export interface SyncItem {
 
 export interface NewPermit {
   plate: string;
+  country?: Country;
   holder: string;
   category: 'guest' | 'staff' | 'supplier';
   vehicle_type: VehicleType;

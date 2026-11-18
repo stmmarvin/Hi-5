@@ -160,6 +160,9 @@ interface EngineSound {
 }
 
 const ENGINES: Record<string, EngineSound> = {
+  // zware diesel van de ambulance en de brandweerwagen
+  'Mercedes Sprinter ambulance': { cylinders: 4, idle: 700, redline: 4200, harmonics: [1, 0.7, 0.4, 0.2, 0.1], growl: 0.45, rasp: 2, bright: 0.5, turbo: 0.2, volume: 1 },
+  'Scania brandweerwagen': { cylinders: 6, idle: 600, redline: 2800, harmonics: [1, 0.8, 0.5, 0.25, 0.12], growl: 0.6, rasp: 2.4, bright: 0.4, turbo: 0.25, volume: 1.1 },
   // viercilinder turbo: beschaafd en gelijkmatig
   'Volkswagen Golf': { cylinders: 4, idle: 800, redline: 6000, harmonics: [1, 0.5, 0.28, 0.12, 0.06], growl: 0.25, rasp: 1.5, bright: 0.8, turbo: 0.25, volume: 0.9 },
   // zes-in-lijn: hees, metalig en luid, met een grommende uitlaat
@@ -346,7 +349,44 @@ export function updateEngine(speed: number, throttle: number) {
   engine.whistleGain.gain.setTargetAtTime(profile.turbo * gas * Math.min(1, rpm / 3500) * 0.012, now, gas ? 0.35 : 0.08);
 }
 
+// ---------- sirene van de hulpdienst die je zelf bestuurt ----------
+
+let siren: { gain: GainNode; nodes: OscillatorNode[] } | null = null;
+
+/** Tweetonige sirene, aan of uit. */
+export function setSiren(on: boolean) {
+  if (!on) {
+    if (!siren || !context) return;
+    const stopped = siren;
+    siren = null;
+    stopped.gain.gain.setTargetAtTime(0, context.currentTime, 0.05);
+    window.setTimeout(() => stopped.nodes.forEach((node) => node.stop()), 300);
+    return;
+  }
+  const a = audio();
+  if (!a || siren) return;
+  const voice = a.ctx.createOscillator();
+  voice.type = 'square';
+  voice.frequency.value = 660;
+  const sweep = a.ctx.createOscillator();
+  sweep.type = 'square';
+  sweep.frequency.value = 0.9;
+  const depth = a.ctx.createGain();
+  depth.gain.value = 130;
+  const filter = a.ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 900;
+  const gain = a.ctx.createGain();
+  gain.gain.value = 0.04;
+  sweep.connect(depth).connect(voice.frequency);
+  voice.connect(filter).connect(gain).connect(a.out);
+  voice.start();
+  sweep.start();
+  siren = { gain, nodes: [voice, sweep] };
+}
+
 export function stopEngine() {
+  setSiren(false);
   if (!engine || !context) return;
   const stopped = engine;
   engine = null;

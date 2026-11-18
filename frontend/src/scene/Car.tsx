@@ -55,7 +55,19 @@ export const CAR_SPECS: Record<string, Spec> = {
 };
 
 const DEFAULT_MODEL = 'Volkswagen Golf';
-export const specOf = (model: string): Spec => CAR_SPECS[model] ?? CAR_SPECS[DEFAULT_MODEL];
+/** Maten van de cabine van de grote hulpverleningsvoertuigen: daarmee zit je hoger en verder naar voren. */
+const CAB_SPECS: Record<string, Spec> = {
+  'Mercedes Sprinter ambulance': {
+    style: 'golf', L: 5.8, W: 2.05, H: 2.25, wb: 3.5, wheel: 0.4,
+    cowl: 2.35, roofFront: 1.65, roofRear: -2.2, tailBase: -2.6, belt: 1.74, hood: 1.55, deck: 1.8, pillars: [],
+  },
+  'Scania brandweerwagen': {
+    style: 'golf', L: 7.4, W: 2.4, H: 2.6, wb: 4.2, wheel: 0.5,
+    cowl: 3.3, roofFront: 2.6, roofRear: -3.2, tailBase: -3.6, belt: 2.09, hood: 1.9, deck: 2.15, pillars: [],
+  },
+};
+
+export const specOf = (model: string): Spec => CAR_SPECS[model] ?? CAB_SPECS[model] ?? CAR_SPECS[DEFAULT_MODEL];
 
 export const SILL = 0.2;      // onderkant van de carrosserie boven de weg
 const BEVEL = 0.09;    // afronding van de randen

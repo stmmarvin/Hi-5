@@ -12,7 +12,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
-from .models import Permit, Presence, Reservation
+from .config import settings
+from .models import Passage, Permit, Presence, Reservation
 
 EMERGENCY_TYPES = {"ambulance", "brandweer", "politie"}
 KEEP = timedelta(hours=24)  # zo lang blijft een kenteken na afloop nog in het systeem
@@ -38,12 +39,21 @@ def forget_expired(db: Session, at: datetime) -> None:
     reservering, kenteken en registratie. Wie zonder reservering is binnengekomen (bezoek,
     medewerker, leverancier, hulpdienst) verdwijnt 24 uur na het scannen van de lijst met
     geregistreerde kentekens; een vaste medewerker of leverancier blijft wel in de kentekenlijst.
+    Geweigerde kentekens worden nooit bewaard (AVG).
     """
     for reservation in db.scalars(select(Reservation).where(Reservation.departure < at.date() - KEEP)).all():
         keys = [permit.plate_key for permit in reservation.permits]
         db.execute(delete(Presence).where(Presence.plate_key.in_(keys)))
         db.delete(reservation)
     db.flush()
+    # AVG: geweigerde kentekens worden niet bewaard (ook niet uit een oudere versie), en een oproep aan de
+    # intercom die nooit is beantwoord, verdwijnt na 24 uur.
+    db.execute(delete(Passage).where(or_(
+        Passage.outcome == "denied",
+        (Passage.outcome == "pending") & (Passage.occurred_at < at - KEEP),
+        # Bewaartermijn: het logboek houdt passages niet langer vast dan nodig (standaard 28 dagen).
+        Passage.occurred_at < at - timedelta(days=settings.retention_days),
+    )))
     guests = select(Permit.id).where(Permit.category == "guest")
     db.execute(delete(Presence).where(
         Presence.entered_at < at - KEEP,

@@ -14,11 +14,13 @@ import { CarBody } from './Car';
 import { eyeOf } from './Cockpit';
 import { headlightMaterial } from './parts';
 import { Caravan, heaterMaterial, Island, Poles, Reception, Welcome } from './Entrance';
-import { campLayout, CARAVANS, LAMP_POSTS, PARKED, PARKING } from './layout';
+import { campLayout, CARAVANS, LAMP_POSTS, PARKED, PARKING, PARKING_SIGN } from './layout';
 import { Bushes, seeded, Trees, Tufts } from './Nature';
 import { boardTexture, roadMarkTexture } from './textures';
 import { groundTexture } from './textures2';
 import { Vehicle } from './Vehicle';
+import { GateCam } from './GateCam';
+import { LAYER } from './feed';
 import { Precipitation, SnowDrift } from './Weather';
 import { WEATHER } from '../sim/weather';
 import { DrivingControls } from '../ui/DrivingControls';
@@ -163,6 +165,8 @@ function Controls() {
   const playerVehicle = useGame((s) => s.playerVehicle);
   const view = useGame((s) => s.view);
   useEffect(() => {
+    // De bestuurder ziet het dashboard van de eigen auto (laag 2); de buitenkant daarvan alleen de slagboomcamera.
+    camera.layers.enable(LAYER.onlyDriver);
     const instance = new OrbitControls(camera, gl.domElement);
     instance.target.set(0.3, 1.9, 3);
     instance.enablePan = false;
@@ -257,7 +261,7 @@ function Controls() {
       camera.position.y = height;
       // De bestuurder kijkt de bocht in.
       const look = camera.position.clone().addScaledVector(forward, 12).addScaledVector(leftward, -steer * 3.2);
-      look.y = height - 0.8;
+      look.y = height - 1.9; // iets omlaag, zodat je het stuur en de tellers ziet
       camera.lookAt(look);
       return;
     }
@@ -378,8 +382,9 @@ function Barrier({ lane }: { lane: Direction }) {
     const target = open ? side * 1.42 : 0;
     arm.current.rotation.z += (target - arm.current.rotation.z) * Math.min(1, delta * 4.5 * world.speed);
     // Vergrendeld door ijzel of sneeuw: het lampje knippert oranje.
-    const warning = world.locked && Math.floor(performance.now() / 400) % 2 === 0;
-    light.current?.emissive.set(world.locked ? (warning ? '#ff9d2e' : '#3a2000') : open ? '#3fd16b' : '#ff3b30');
+    const alarm = world.locked || world.fault;
+    const warning = alarm && Math.floor(performance.now() / 400) % 2 === 0;
+    light.current?.emissive.set(alarm ? (warning ? '#ff9d2e' : '#3a2000') : open ? '#3fd16b' : '#ff3b30');
     if (ice.current) ice.current.visible = world.ice;
     if (snow.current) {
       snow.current.visible = world.snow > 0.5;
@@ -471,7 +476,7 @@ function Roof({ width, depth, height, y, color }: { width: number; depth: number
 
 function Camp() {
   const parking = useMemo(() => boardTexture(['P'], '#1b4fa0', '#ffffff', 110), []);
-  const gravel = useMemo(() => groundTexture('grind', 5, 4), []);
+  const gravel = useMemo(() => groundTexture('grind', 18, 7), []);
   const { trees, tents, hedge, shrubs, flowers } = campLayout();
 
   return (
@@ -488,16 +493,17 @@ function Camp() {
       {/* parkeerplaats */}
       <group position={[PARKING.x, 0, PARKING.z]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
-          <planeGeometry args={[16, 14]} />
+          <planeGeometry args={[PARKING.width, PARKING.depth]} />
           <meshStandardMaterial map={gravel} roughness={1} />
         </mesh>
-        {[-6, -3, 0, 3, 6].map((x) => (
-          <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.03, -3.5]}>
+        {/* twee rijen parkeervakken met een rijbaan ertussen */}
+        {[-8.5, 8.5].flatMap((row) => Array.from({ length: 17 }, (_, i) => (
+          <mesh key={`${row}:${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[-27 + i * 3, 0.03, row]}>
             <planeGeometry args={[0.12, 5]} /><meshBasicMaterial color="#f1f4ea" />
           </mesh>
-        ))}
-        <mesh position={[7.4, 1.5, 6.4]} castShadow><cylinderGeometry args={[0.06, 0.06, 3, 8]} /><meshStandardMaterial color="#3a3f45" /></mesh>
-        <mesh position={[7.4, 2.7, 6.47]}><planeGeometry args={[0.9, 0.9]} /><meshBasicMaterial map={parking} /></mesh>
+        )))}
+        <mesh position={[PARKING_SIGN.x, 1.5, PARKING_SIGN.z]} castShadow><cylinderGeometry args={[0.06, 0.06, 3, 8]} /><meshStandardMaterial color="#3a3f45" /></mesh>
+        <mesh position={[PARKING_SIGN.x, 2.7, PARKING_SIGN.z + 0.07]}><planeGeometry args={[0.9, 0.9]} /><meshBasicMaterial map={parking} /></mesh>
         {PARKED.map((car) => (
           <group key={car.plate} position={[car.x, 0, car.z]}>
             <CarBody model={car.model} color={car.color} plate={car.plate} />
@@ -533,6 +539,7 @@ export function Scene() {
       <Welcome />
       <Beam from={BEAM.from} to={BEAM.to} />
       <Precipitation />
+      <GateCam />
       <SnowDrift />
       <Camp />
       {vehicles.map((vehicle) => <Vehicle key={vehicle.id} vehicle={vehicle} />)}

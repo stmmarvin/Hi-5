@@ -1,4 +1,5 @@
 import { CanvasTexture, SRGBColorSpace } from 'three';
+import { countryInfo } from '../sim/plates';
 import type { Country } from '../types';
 
 const FONT = '"Barlow Condensed", "Arial Narrow", Arial, sans-serif';
@@ -25,7 +26,8 @@ export function plateTexture(plate: string, country: Country): CanvasTexture {
   if (cached) return cached;
 
   const { canvas, ctx } = canvasOf(320, 80);
-  ctx.fillStyle = country === 'NL' ? '#f7b500' : '#ffffff';
+  const info = countryInfo(country);
+  ctx.fillStyle = info.yellow ? '#f7b500' : '#ffffff';
   ctx.fillRect(0, 0, 320, 80);
   ctx.strokeStyle = '#15181a';
   ctx.lineWidth = 6;
@@ -33,10 +35,10 @@ export function plateTexture(plate: string, country: Country): CanvasTexture {
   ctx.fillStyle = '#1b4fa0';
   ctx.fillRect(6, 6, 34, 68);
   ctx.fillStyle = '#ffffff';
-  ctx.font = `700 20px ${FONT}`;
+  ctx.font = `700 ${country.length > 2 ? 14 : 20}px ${FONT}`;
   ctx.textAlign = 'center';
-  ctx.fillText(country, 23, 66);
-  ctx.fillStyle = country === 'B' ? '#a8121a' : '#111111';
+  ctx.fillText(country, 23, 66, 30);
+  ctx.fillStyle = info.ink ?? '#111111';
   ctx.font = `700 54px ${FONT}`;
   ctx.textBaseline = 'middle';
   ctx.fillText(plate, 180, 43, 262);

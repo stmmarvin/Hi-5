@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { checkPlate, cleanDutchPlateInput, startDriving, useGame } from '../sim/engine';
+import { checkPlate, cleanDutchPlateInput, EMERGENCY_SERVICES, startDriving, useGame, VEHICLE_MODEL, VEHICLE_NAME, type EmergencyType } from '../sim/engine';
+import { dutchPlateProblem } from '../sim/plates';
 import { CAR_COLORS } from '../sim/scenarios';
-import { CATEGORY } from './Plate';
+import { CATEGORY, Plate } from './Plate';
 
 /** De auto's waaruit je kiest, met de motor die je straks hoort. */
 const CARS = [
@@ -12,11 +13,14 @@ const CARS = [
   { model: 'Tesla Model 3', engine: 'elektrisch' },
 ];
 
-/** Vóór de rit: kies je auto, de kleur en een kenteken (uit de database of zelf ingevuld). */
+const SERVICES = Object.keys(EMERGENCY_SERVICES) as EmergencyType[];
+
+/** Vóór de rit: kies een eigen auto (met kleur en kenteken) of rijd als politie, ambulance of brandweer. */
 export function DriveSetup() {
   const permits = useGame((s) => s.permits);
   const message = useGame((s) => s.driveMessage);
   useGame((s) => s.minute); // de controle hieronder hangt af van de tijd
+  const [service, setService] = useState<EmergencyType | null>(null);
   const [model, setModel] = useState(CARS[0].model);
   const [color, setColor] = useState(CAR_COLORS[0]);
   const [source, setSource] = useState<'lijst' | 'zelf'>('lijst');
@@ -24,12 +28,39 @@ export function DriveSetup() {
   const [typed, setTyped] = useState('');
 
   const chosen = source === 'lijst' ? (listed || permits[0]?.plate || '') : typed;
-  const result = chosen.replace(/[^A-Z0-9]/gi, '').length >= 3 ? checkPlate(chosen) : null;
+  // Een zelf ingevoerd kenteken moet voldoen aan de regels van de RDW; pas dan kijkt de slagboom ernaar.
+  const rdw = source === 'zelf' && typed.replace(/[^A-Z0-9]/gi, '').length >= 6 ? dutchPlateProblem(typed) : null;
+  const result = !rdw && chosen.replace(/[^A-Z0-9]/gi, '').length >= 3 ? checkPlate(chosen) : null;
 
   return (
     <section className="kaart rijden" aria-label="Zelf rijden">
       <p className="kaart-kop">Zelf rijden</p>
 
+      <p className="veld-kop">Waarmee rijd je?</p>
+      <div className="keuze-tabs voertuig-soort">
+        <button type="button" aria-pressed={!service} onClick={() => setService(null)}>Eigen auto</button>
+      </div>
+      <p className="veld-kop">Of rijd als hulpdienst</p>
+      <div className="hulpdienst-keuze">
+        {SERVICES.map((kind) => (
+          <button key={kind} type="button" className={kind} aria-pressed={service === kind} onClick={() => setService(kind)}>{EMERGENCY_SERVICES[kind].label}</button>
+        ))}
+      </div>
+
+      {service ? (
+        <>
+          <p className="kaart-sub">{VEHICLE_NAME[service]} met zwaailicht en sirene (toets L).</p>
+          <p className="veld-kop">Kenteken</p>
+          <Plate plate={EMERGENCY_SERVICES[service].plate} country="NL" />
+          <div className="boeking goed" role="status">
+            <strong>Slagboom gaat open: hulpdienst</strong>
+            <p>Hulpdiensten mogen altijd door, ook zonder boeking.</p>
+          </div>
+          <button type="button" className="knop primair" onClick={() => startDriving(EMERGENCY_SERVICES[service].plate, VEHICLE_MODEL[service], EMERGENCY_SERVICES[service].color, service)}>Start de motor</button>
+          {message && <p className="kaart-sub">{message}</p>}
+        </>
+      ) : (
+        <>
       <p className="veld-kop">Kies je auto</p>
       <div className="auto-keuze">
         {CARS.map((car) => (
@@ -65,6 +96,7 @@ export function DriveSetup() {
           <input className="kenteken-invoer" value={typed} onChange={(event) => setTyped(cleanDutchPlateInput(event.target.value))} placeholder="bijvoorbeeld K-123-BB" maxLength={10} />
         </label>
       )}
+      {rdw && <p className="fout" role="alert">{rdw}</p>}
       {result && (
         <div className={`boeking ${result.open ? 'goed' : 'fout'}`} role="status">
           <strong>{result.open ? `Slagboom gaat open: ${result.holder}` : 'Slagboom blijft dicht: je belt aan bij de intercom'}</strong>
@@ -72,8 +104,10 @@ export function DriveSetup() {
         </div>
       )}
 
-      <button type="button" className="knop primair" onClick={() => startDriving(chosen, model, color)}>Start de motor</button>
+      <button type="button" className="knop primair" disabled={Boolean(rdw)} onClick={() => startDriving(chosen, model, color)}>Start de motor</button>
       {message && <p className="kaart-sub">{message}</p>}
+        </>
+      )}
     </section>
   );
 }
