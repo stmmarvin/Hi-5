@@ -24,7 +24,7 @@ Start Docker Desktop en wacht tot het zegt dat het draait, voordat je verder gaa
 ### Stap 1: de code ophalen
 
 ```
-git clone https://github.com/stmmarvin/Hi-5.git
+git clone -b Marvin-simulate https://github.com/stmmarvin/Hi-5.git
 cd Hi-5
 ```
 
@@ -317,6 +317,35 @@ met `docker compose stop tunnel`. Iedereen met de link ziet het inlogscherm, dus
 
 Via de link gelden de wachtwoorden uit de `.env` van de computer waarop de tunnel draait. De wachtwoorden uit je
 eigen `.env` gebruik je alleen voor je eigen lokale installatie.
+
+### Vaste link met ngrok
+
+Met een gratis ngrok-account blijft het adres gelijk, ook na een herstart. Eén teamlid regelt dit op de computer die
+de site deelt:
+
+1. Maak een account op https://dashboard.ngrok.com/signup.
+2. Kopieer je token van https://dashboard.ngrok.com/get-started/your-authtoken.
+3. Zet in `.env` de regel `NGROK_AUTHTOKEN=` met je token erachter. Deel dit token met niemand.
+4. Stop de tijdelijke tunnel en start ngrok:
+
+```powershell
+docker compose stop tunnel
+docker compose --profile team-vast up -d ngrok
+docker compose logs ngrok
+```
+
+Het adres staat in de logregel met `url=` en op https://dashboard.ngrok.com/domains. Het eindigt op een
+ngrok-domein. Bezoekers zien de eerste keer een waarschuwingspagina van ngrok en klikken daar op **Visit Site**.
+Het gratis plan heeft een datalimiet per maand. Stoppen doe je met `docker compose stop ngrok`.
+
+### Zelf draaien als teamlid
+
+Volg de stappen 1 tot en met 4 onder "Installeren" en kies stap 3A. Je site staat dan op http://localhost:8080, met je
+eigen database en je eigen wachtwoorden. Daarvoor heb je geen ngrok nodig en je computer hoeft niet bereikbaar te zijn
+voor anderen.
+
+Wil je je eigen versie ook delen, maak dan een eigen ngrok-account en gebruik je eigen token. Je krijgt dan een eigen
+adres. Een adres van iemand anders kun je niet overnemen, en deel je token niet.
 
 ## Cloud
 

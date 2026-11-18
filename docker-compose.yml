@@ -82,6 +82,20 @@ services:
     depends_on:
       - frontend
 
+  # Vaste https-link via ngrok: het adres blijft gelijk na een herstart. Zet eerst NGROK_AUTHTOKEN in .env, dan:
+  #   docker compose --profile team-vast up -d ngrok
+  # Alleen de website gaat naar buiten; de database en pgAdmin niet. De link werkt zolang deze computer aan staat.
+  ngrok:
+    image: ngrok/ngrok:latest
+    profiles: ["team-vast"]
+    restart: unless-stopped
+    environment:
+      # Niet verplicht gemaakt: anders start de rest van de stack ook niet als dit leeg is.
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    command: http --log stdout frontend:80
+    depends_on:
+      - frontend
+
 volumes:
   dbdata:
   pgadmindata:
