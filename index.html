@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#081323" />
+    <meta name="description" content="Lokale Nederlandse hulpdienstherkenning en een virtuele 3D-campingingang." />
+    <title>Slagboom De Groene Weide</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="De Groene Weide">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none"><path d="M4 31 16.4 9l8.2 14.3 4.1-7.1L37 31H4Z" fill="currentColor"/><path d="m13.7 13.8 2.7 4.6 2.7-1.6-2.7-4.7-2.7 1.7Z" fill="#081323"/></svg>
+          </span>
+          <span class="brand-copy"><strong>DE GROENE WEIDE</strong><small>CAMPING · NATUUR · RUST</small></span>
+        </a>
+        <div class="topbar-tools">
+          <span class="system-pill"><span class="live-dot"></span><span id="model-indicator">AI-MODEL GEREED</span></span>
+          <span class="simulation-label">VIRTUELE TOEGANGSCONTROLE</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="page-heading" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">CAMPINGINGANG · TOEGANGSCONTROLE</p>
+            <h1 id="page-title">Slagboom <span>De Groene Weide</span></h1>
+            <p class="page-subtitle">Alleen Nederlands politie-, ambulance- en brandweervoertuigen worden doorgelaten.</p>
+          </div>
+          <div class="safety-pill"><span class="live-dot"></span> ALLEEN VIRTUELE SIMULATIE</div>
+        </section>
+
+        <section class="dashboard" aria-label="Camera, AI-herkenning en 3D-campingingang">
+          <aside class="panel camera-panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">01 / BEELDINVOER</p><h2>Camera &amp; afbeelding</h2></div>
+              <span class="panel-kicker">AI-INGANG</span>
+            </div>
+            <div class="camera-view" id="camera-view">
+              <video id="camera-video" autoplay muted playsinline aria-label="Live webcambeeld"></video>
+              <div class="camera-placeholder" id="camera-placeholder">
+                <span class="camera-symbol" aria-hidden="true">◎</span>
+                <strong>Camera staat uit</strong>
+                <span>Start de camera of kies een afbeelding</span>
+              </div>
+              <div class="camera-badge" id="camera-badge"><span class="live-dot"></span> LIVE</div>
+              <div class="image-preview-wrap" id="image-preview-wrap" hidden>
+                <img id="image-preview" alt="Geselecteerde afbeelding voor herkenning" />
+                <span class="preview-label" id="preview-label">VOORBEELD</span>
+              </div>
+            </div>
+            <p class="inline-message" id="camera-message" role="status" aria-live="polite">Cameratoegang vraagt om uw toestemming.</p>
+            <div class="button-row camera-buttons">
+              <button class="button button-secondary" id="start-camera" type="button">Start camera</button>
+              <button class="button button-secondary" id="capture-image" type="button" disabled>Maak foto</button>
+              <button class="button button-quiet" id="stop-camera" type="button" disabled>Stop</button>
+            </div>
+            <div class="upload-row">
+              <label class="button button-quiet upload-button" for="image-upload">↑ Kies afbeelding</label>
+              <input id="image-upload" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" />
+              <span>JPG · PNG · WebP · max. 15 MB</span>
+            </div>
+            <button class="button button-primary scan-button" id="scan-image" type="button" disabled>
+              <span id="scan-button-label">Voertuig scannen</span><span class="button-arrow" aria-hidden="true">↗</span>
+            </button>
+            <p class="privacy-note">De foto wordt lokaal in deze browser onderzocht en niet naar een herkennings-API verstuurd.</p>
+          </aside>
+
+          <section class="panel gate-panel">
+            <div class="panel-heading gate-heading">
+              <div><p class="eyebrow">02 / VIRTUELE CAMPINGINGANG</p><h2>AI-CAMERA INGANG</h2></div>
+              <span class="gate-id">SLAGBOOM A-01</span>
+            </div>
+            <div class="gate-scene" id="gate-scene">
+              <canvas class="three-canvas" id="three-canvas" aria-label="Interactieve 3D-campingingang met slagbomen en terrein"></canvas>
+              <div class="scene-top-label"><span class="scene-online-dot"></span> DE GROENE WEIDE <span>·</span> INGANG A</div>
+              <div class="ai-ingang-card">
+                <div class="ai-card-title"><span class="live-dot"></span> AI-CAMERA INGANG <span class="ai-card-state" id="scene-camera-state">STAND-BY</span></div>
+                <div class="scene-feed" id="scene-feed">
+                  <video id="scene-feed-video" autoplay muted playsinline aria-hidden="true"></video>
+                  <img id="scene-feed-image" alt="Beeld aangeboden bij de AI-camera" hidden />
+                  <div class="scene-feed-empty" id="scene-feed-empty"><span>◎</span> WACHT OP BEELD</div>
+                  <div class="scene-feed-scan" id="scene-feed-scan">VOERTUIG SCANNEN</div>
+                </div>
+                <div class="scene-recognition-status" id="scene-recognition-status">Zoekt naar een voertuig…</div>
+              </div>
+              <div class="scene-camera-controls" aria-label="Camerastandpunt 3D-scène">
+                <span>CAMERASTANDPUNT</span>
+                <div>
+                  <button class="view-button is-active" data-view="overzicht" type="button">Overzicht</button>
+                  <button class="view-button" data-view="ingang" type="button">Ingang</button>
+                  <button class="view-button" data-view="zijkant" type="button">Zijkant</button>
+                  <button class="view-button" data-view="slagboom" type="button">Slagboom</button>
+                </div>
+              </div>
+              <div class="scene-gate-label"><span class="open-label-dot" id="scene-gate-dot"></span><span id="gate-open-text">SLAGBOOM GESLOTEN</span></div>
+              <div class="scene-error" id="scene-error" role="status" hidden></div>
+            </div>
+            <div class="gate-status-row">
+              <div class="gate-access-icon" id="gate-access-icon" aria-hidden="true">⊘</div>
+              <div class="gate-access-copy">
+                <span class="eyebrow">TOEGANGSCONTROLE</span>
+                <strong id="gate-access-status">KLAAR VOOR SCAN</strong>
+                <span id="gate-category">Nog geen voertuig gecontroleerd</span>
+              </div>
+              <div class="gate-status-indicator" id="gate-status-indicator"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel results-panel" aria-labelledby="results-title">
+          <div class="panel-heading results-heading">
+            <div><p class="eyebrow">03 / HERKENNING EN LOGBOEK</p><h2 id="results-title">Voertuigherkenning</h2></div>
+            <span class="local-chip"><span class="live-dot"></span> INFERENTIE OP DIT APPARAAT</span>
+          </div>
+          <div class="model-progress" id="model-progress" hidden>
+            <div class="progress-label"><span id="progress-message">AI-model laden…</span><span id="progress-value">0%</span></div>
+            <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+          </div>
+          <div class="results-grid">
+            <div class="detection-result">
+              <span class="result-label">HERKENNINGSRESULTAAT</span>
+              <div class="result-main">
+                <span class="result-symbol" id="result-symbol">—</span>
+                <div><strong id="detected-category">Nog geen scan</strong><span id="detection-summary">Kies of fotografeer een afbeelding.</span></div>
+              </div>
+              <div class="decision-banner decision-idle" id="decision-banner" role="status" aria-live="polite">
+                <span class="decision-indicator"></span><strong id="decision-text">WACHT OP VOERTUIG</strong>
+              </div>
+              <div class="verification-steps">
+                <div><span class="step-number">1</span><span>Motorvoertuig</span><strong id="vehicle-check-status">WACHT</strong></div>
+                <div><span class="step-number">2</span><span>Nederlandse dienst</span><strong id="dutch-check-status">WACHT</strong></div>
+                <div><span class="step-number">3</span><span>Markering / OCR</span><strong id="ocr-check-status">WACHT</strong></div>
+              </div>
+            </div>
+            <div class="scores-section">
+              <div class="score-header"><span class="result-label">MODEL-SIMILARITEITSSCORES</span><span class="score-note">Relatieve scores, geen kansen</span></div>
+              <div class="score-list" id="score-list"><p class="empty-scores">Scores verschijnen na een scan.</p></div>
+              <div class="threshold-settings">
+                <label for="confidence-threshold">Minimale Nederlandse score <strong id="threshold-value">35%</strong></label>
+                <input id="confidence-threshold" type="range" min="15" max="60" step="1" value="35" />
+                <label for="score-margin">Minimaal scoreverschil <strong id="margin-value">12%</strong></label>
+                <input id="score-margin" type="range" min="5" max="30" step="1" value="12" />
+              </div>
+            </div>
+            <div class="history-section">
+              <div class="score-header"><span class="result-label">LAATSTE HERKENNINGEN</span><span class="history-count" id="history-count">0 / 8</span></div>
+              <ol class="history-list" id="history-list"><li class="history-empty">Nog geen voertuigen herkend.</li></ol>
+            </div>
+          </div>
+        </section>
+
+        <details class="panel test-panel" id="test-panel">
+          <summary><span><span class="eyebrow">04 / TESTSCHERM</span><strong>Testset Nederlandse en buitenlandse voertuigen</strong></span><span class="test-summary-note">Kies per categorie zelf een voorbeeldafbeelding</span></summary>
+          <p class="test-intro">Elke test wordt met hetzelfde AI-model en dezelfde OCR-controles uitgevoerd. Verwachte uitkomsten zijn testcriteria; de getoonde uitslag is de daadwerkelijke modeluitkomst. Bestandsnamen spelen geen rol in de herkenning.</p>
+          <div class="test-groups">
+            <section class="test-group"><h3>Verwacht: toegang verlenen</h3>
+              <div class="test-case" data-test-case="politie" data-expected="authorized"><span>Nederlandse politieauto</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding Nederlandse politieauto" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+              <div class="test-case" data-test-case="ambulance" data-expected="authorized"><span>Nederlandse ambulance</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding Nederlandse ambulance" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+              <div class="test-case" data-test-case="brandweer" data-expected="authorized"><span>Nederlandse brandweerwagen</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding Nederlandse brandweerwagen" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+            </section>
+            <section class="test-group"><h3>Verwacht: weigeren of onzeker</h3>
+              <div class="test-case" data-test-case="duitse-politie" data-expected="denied"><span>Duitse politieauto</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding Duitse politieauto" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+              <div class="test-case" data-test-case="belgische-ambulance" data-expected="denied"><span>Belgische ambulance</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding Belgische ambulance" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+              <div class="test-case" data-test-case="amerikaanse-brandweer" data-expected="denied"><span>Amerikaanse brandweerwagen</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding Amerikaanse brandweerwagen" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+              <div class="test-case" data-test-case="nederlandse-auto" data-expected="denied"><span>Gewone Nederlandse auto</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding gewone Nederlandse auto" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+              <div class="test-case" data-test-case="bestelwagen" data-expected="denied"><span>Commerciële bestelwagen</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding bestelwagen" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+              <div class="test-case" data-test-case="voorwerp" data-expected="denied"><span>Huishoudelijk voorwerp</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Voorbeeldafbeelding huishoudelijk voorwerp" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+              <div class="test-case" data-test-case="onduidelijk" data-expected="rejected"><span>Onduidelijk hulpdienstvoertuig</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Onduidelijke voorbeeldafbeelding" /><button type="button" disabled>Test</button><output>Geen afbeelding</output></div>
+            </section>
+          </div>
+          <p class="test-report" id="test-report" role="status" aria-live="polite">Nog geen test uitgevoerd.</p>
+        </details>
+      </main>
+      <footer class="footer"><span>DE GROENE WEIDE · VIRTUELE SLAGBOOMSIMULATIE</span><span>Geen fysieke slagboom aangesloten · Nederlandse verificatie is bewust streng</span></footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
