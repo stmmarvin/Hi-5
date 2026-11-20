@@ -8,7 +8,7 @@
         "npx",
         "-y",
         "@azure-devops/mcp",
-        "2026-OpenICT-Sept-Project4-Hi-5"
+        "HU-HBO-ICT"
       ],
       "env": {}
     }
