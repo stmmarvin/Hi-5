@@ -61,9 +61,14 @@ def forget_expired(db: Session, at: datetime) -> None:
     ))
 
 
-def decide(db: Session, key: str, vehicle_type: str, at: datetime) -> Decision:
-    if vehicle_type in EMERGENCY_TYPES:
-        return Decision(True, "emergency", "Hulpdienst, mag altijd door")
+def is_emergency(vehicle_type: str, siren: bool) -> bool:
+    """Een hulpdienst herkent de camera aan zwaailicht en sirene. Zonder die twee is het een gewoon voertuig."""
+    return vehicle_type in EMERGENCY_TYPES and siren
+
+
+def decide(db: Session, key: str, vehicle_type: str, at: datetime, siren: bool = False) -> Decision:
+    if is_emergency(vehicle_type, siren):
+        return Decision(True, "emergency", "Hulpdienst met zwaailicht en sirene, mag altijd door")
 
     permit = db.scalar(select(Permit).where(Permit.plate_key == key, Permit.active.is_(True)))
     if permit is None:

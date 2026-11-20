@@ -8,8 +8,11 @@ export const plateKey = (plate: string) => plate.toUpperCase().replace(/[^A-Z0-9
 
 const LABEL = { staff: 'Medewerker', supplier: 'Leverancier' } as const;
 
-/** Hulpdiensten mogen altijd naar binnen. */
+/** Hulpdiensten mogen altijd naar binnen, als de camera zwaailicht en sirene ziet. */
 export const EMERGENCY_TYPES: readonly VehicleType[] = ['politie', 'ambulance', 'brandweer'];
+
+/** Een hulpdienst herkent de camera aan zwaailicht en sirene. Zonder die twee is het een gewoon voertuig. */
+export const isEmergency = (type: VehicleType, siren?: boolean) => EMERGENCY_TYPES.includes(type) && Boolean(siren);
 
 export type Zone = 'camping' | 'parkeren';
 
@@ -18,12 +21,12 @@ export const zoneFor = (category: string): Zone => (['guest', 'staff', 'emergenc
 
 export function decideLocal(
   permits: Permit[],
-  vehicle: { plate: string; type: VehicleType },
+  vehicle: { plate: string; type: VehicleType; siren?: boolean },
   minute: number,
 ): ScanResult {
   const base = { passage_id: null };
-  if (EMERGENCY_TYPES.includes(vehicle.type)) {
-    return { ...base, open: true, code: 'emergency', reason: 'Hulpdienst, mag altijd door', holder: 'Hulpdienst', category: 'emergency' };
+  if (isEmergency(vehicle.type, vehicle.siren)) {
+    return { ...base, open: true, code: 'emergency', reason: 'Hulpdienst met zwaailicht en sirene, mag altijd door', holder: 'Hulpdienst', category: 'emergency' };
   }
   const key = plateKey(vehicle.plate);
   const today = isoDate(minute);

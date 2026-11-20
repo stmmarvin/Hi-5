@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { feed, FEED_HEIGHT, FEED_WIDTH, type FeedPlate } from '../scene/feed';
 import { useGame, type Readout } from '../sim/engine';
 import { countryName } from '../sim/plates';
+import { EMERGENCY_TYPES } from '../sim/rules';
 import { seconds } from '../sim/weather';
 
 type Phase = 'zoekt' | 'voertuig' | 'plaat' | 'lezen' | 'klaar';
@@ -113,8 +114,14 @@ export function AiCam() {
 
   const plate = feed.plate;
   const done = phase === 'klaar' && readout;
+  const seen = phase === 'lezen' || phase === 'klaar' ? readout : null;
   const steps: { label: string; detail?: string; state: 'klaar' | 'bezig' | 'wacht' }[] = [
     { label: phase === 'zoekt' ? 'Zoekt naar een voertuig' : 'Voertuig gedetecteerd', state: phase === 'zoekt' ? 'bezig' : 'klaar' },
+    ...(seen && EMERGENCY_TYPES.includes(seen.type) ? [{
+      label: seen.siren ? 'Zwaailicht en sirene gezien' : 'Geen zwaailicht of sirene',
+      detail: seen.siren ? 'Hulpdienst met spoed: mag altijd door' : 'Gewone controle van het kenteken',
+      state: 'klaar' as const,
+    }] : []),
     { label: 'Kentekenplaat gevonden', state: phase === 'zoekt' ? 'wacht' : phase === 'voertuig' ? 'bezig' : 'klaar' },
     {
       label: 'Tekens lezen',

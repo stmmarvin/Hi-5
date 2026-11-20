@@ -19,9 +19,10 @@ import { Bushes, seeded, Trees, Tufts } from './Nature';
 import { boardTexture, roadMarkTexture } from './textures';
 import { groundTexture } from './textures2';
 import { Vehicle } from './Vehicle';
+import { Bert } from './Bert';
 import { GateCam } from './GateCam';
 import { LAYER } from './feed';
-import { Precipitation, SnowDrift } from './Weather';
+import { Precipitation, SnowCover, SnowDrift } from './Weather';
 import { WEATHER } from '../sim/weather';
 import { DrivingControls } from '../ui/DrivingControls';
 
@@ -526,8 +527,10 @@ function Camp() {
 
 export function Scene() {
   const vehicles = useGame((s) => s.vehicles);
+  // Gepauzeerd voor het overzichtsportaal: niets opnieuw tekenen.
+  const paused = useGame((s) => s.portal);
   return (
-    <Canvas shadows="soft" dpr={[1, 2]} camera={{ position: [0.9, 4.2, 26.5], fov: 40, near: 0.5, far: 420 }}>
+    <Canvas frameloop={paused ? 'never' : 'always'} shadows="soft" dpr={[1, 2]} camera={{ position: [0.9, 4.2, 26.5], fov: 40, near: 0.5, far: 420 }}>
       <Atmosphere />
       <DrivingControls />
       <Controls />
@@ -535,12 +538,14 @@ export function Scene() {
       <Island />
       <Barrier lane="in" />
       <Barrier lane="out" />
+      <Bert />
       <Poles lampMaterial={lampMaterial} />
       <Welcome />
       <Beam from={BEAM.from} to={BEAM.to} />
       <Precipitation />
       <GateCam />
       <SnowDrift />
+      <SnowCover />
       <Camp />
       {vehicles.map((vehicle) => <Vehicle key={vehicle.id} vehicle={vehicle} />)}
     </Canvas>

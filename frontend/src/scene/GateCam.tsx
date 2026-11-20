@@ -17,6 +17,7 @@ const LOOKS_AT = new Vector3(3.3, 0.6, 9);
 function frontPlate(vehicle: SimVehicle) {
   const pose = vehicle.player
     ? playerPose(vehicle)
+    : vehicle.pose ? { x: vehicle.pose.x, z: vehicle.pose.z, heading: vehicle.pose.heading - Math.PI }
     : { x: LANE_IN + (vehicle.offset ?? 0), z: vehicle.z, heading: 0 };
   const forward = new Vector3(-Math.sin(pose.heading), 0, -Math.cos(pose.heading));
   const side = new Vector3(-Math.cos(pose.heading), 0, Math.sin(pose.heading));

@@ -114,6 +114,8 @@ class ScanIn(BaseModel):
     plate: str
     country: Country = "NL"
     vehicle_type: VehicleType = "auto"
+    # Zwaailicht en sirene aan: alleen dan herkent de camera een hulpdienst die altijd door mag.
+    siren: bool = False
     direction: Literal["in"] = "in"  # alleen de ingang leest kentekens; de uitgang heeft geen camera
     at: datetime | None = None  # alleen gebruikt in simulatiemodus
 

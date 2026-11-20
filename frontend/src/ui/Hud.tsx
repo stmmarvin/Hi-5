@@ -1,13 +1,14 @@
 import { clock, dateLabel, SHIFT_END } from '../sim/clock';
-import { answer, backToMenu, clearGate, closeChat, toggleMute, logout, sayToReception, setFault, setOnline, setSpeed, setWeather, startShift, useGame, VEHICLE_NAME, type Fault, type SessionMode } from '../sim/engine';
+import { answer, backToMenu, closePortal, openPortal, clearGate, closeChat, toggleMute, logout, sayToReception, setFault, setOnline, setSpeed, setWeather, startShift, useGame, VEHICLE_NAME, type Fault, type SessionMode } from '../sim/engine';
 import { READ_LIMIT, seconds, WEATHER, WEATHER_ORDER, type Weather } from '../sim/weather';
 import { countryName } from '../sim/plates';
 import { DriveHud } from './DriveHud';
 import { DriveSetup } from './DriveSetup';
 import { Plate } from './Plate';
+import { SendPlate } from './Portal';
 
 
-export function TopBar({ overview, overviewOpen, onOverview }: { overview: boolean; overviewOpen: boolean; onOverview: () => void }) {
+export function TopBar() {
   const user = useGame((s) => s.user);
   const phase = useGame((s) => s.phase);
   const minute = useGame((s) => s.minute);
@@ -19,17 +20,20 @@ export function TopBar({ overview, overviewOpen, onOverview }: { overview: boole
   const weather = useGame((s) => s.weather);
   const power = useGame((s) => s.power);
   const gateDefect = useGame((s) => s.gateDefect);
-  const playing = phase === 'playing';
+  const portal = useGame((s) => s.portal);
+  // In het portaal staat de simulatie stil: dan geen knoppen voor de simulatie.
+  const playing = phase === 'playing' && !portal;
+  const paused = phase === 'playing' && portal;
   const fault: Fault = gateDefect ? 'defect' : power !== 'net' ? 'stroom' : 'geen';
 
   return (
     <header className="kop">
       <h1>Slagboom De Groene Weide</h1>
       <div className="kop-midden">
-        <div className="klok">
+        {!portal && <div className="klok">
           <span>{dateLabel(minute)}</span>
           <strong>{clock(minute)}</strong>
-        </div>
+        </div>}
         {playing && <span className="modus-label">{mode === 'zelf_rijden' ? 'Zelf rijden' : 'Automatische kentekenherkenning'}</span>}
         {playing && <button type="button" className="knop klein donker" onClick={backToMenu}>Kies andere modus</button>}
         {playing && <button type="button" className="knop klein donker" aria-pressed={!muted} onClick={toggleMute}>{muted ? 'Geluid uit' : 'Geluid aan'}</button>}
@@ -67,11 +71,10 @@ export function TopBar({ overview, overviewOpen, onOverview }: { overview: boole
         )}
       </div>
       <div className="kop-gebruiker">
-        {overview && (
-          <button type="button" className={`kop-overzicht${overviewOpen ? ' actief' : ''}`} aria-expanded={overviewOpen} onClick={onOverview}>
-            <span aria-hidden="true">☰</span> Overzicht
-          </button>
-        )}
+        {paused && <span className="modus-label">Simulatie gepauzeerd</span>}
+        <button type="button" className={`kop-overzicht${portal ? ' actief' : ''}`} aria-pressed={portal} onClick={portal ? closePortal : openPortal}>
+          <span aria-hidden="true">☰</span> {portal ? (paused ? 'Verder met de simulatie' : 'Naar de simulatie') : 'Overzichtsportaal'}
+        </button>
         <span>{user?.display_name} ({user?.role})</span>
         <button type="button" className="knop klein donker" onClick={() => void logout()}>Log uit</button>
       </div>
@@ -131,6 +134,12 @@ export function GateCards() {
 
       <div className={`kaarten${playerVehicle ? ' met-hud' : ''}`}>
         {mode === 'zelf_rijden' && !playerVehicle && <DriveSetup />}
+        {mode === 'simulatie' && !readout && !call && (
+          <details className="kaart stuur-kenteken">
+            <summary>Stuur zelf een kenteken naar de slagboom</summary>
+            <SendPlate />
+          </details>
+        )}
         {readout && (
         <section className="kaart camera" aria-label="Camera">
             <>
@@ -158,8 +167,8 @@ export function GateCards() {
         )}
 
         {chat && (
-          <section className="kaart intercom gesprek" role="alertdialog" aria-label="Gesprek met de receptie">
-            <p className="kaart-kop">Intercom: receptie{chat.lines.length ? ` (${chat.name})` : ''}</p>
+          <section className="kaart intercom gesprek" role="alertdialog" aria-label="Gesprek met Boer Bert">
+            <p className="kaart-kop">Intercom: {chat.name} bij de slagboom</p>
             <div className="gesprek-regels" aria-live="polite">
               {chat.lines.map((line, i) => (
                 <p key={i} className={`regel ${line.who}`}><span>{line.who === 'jij' ? 'Jij' : chat.name}</span>{line.text}</p>
@@ -179,7 +188,7 @@ export function GateCards() {
 
         {call && (
           <section className="kaart intercom" role="alertdialog" aria-label="Intercom">
-            <p className="kaart-kop">{call.manual ? 'Medewerker bij de slagboom' : 'Intercom: de bestuurder belt aan'}</p>
+            <p className="kaart-kop">{call.manual ? 'Boer Bert bij de slagboom' : 'Intercom: de bestuurder belt aan'}</p>
             <p className="citaat">“{call.message}”</p>
             <p className="kaart-sub">
               <Plate plate={call.plate} country={call.country} /> {call.reason}

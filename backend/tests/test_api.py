@@ -3,9 +3,10 @@ from conftest import login
 NOON = "2026-08-01T12:00:00"
 
 
-def scan(client, plate, direction="in", at=NOON, vehicle_type="auto", country="NL"):
+def scan(client, plate, direction="in", at=NOON, vehicle_type="auto", country="NL", siren=False):
     r = client.post("/api/gate/scan", json={
         "plate": plate, "direction": direction, "at": at, "vehicle_type": vehicle_type, "country": country,
+        "siren": siren,
     })
     assert r.status_code == 200, r.text
     return r.json()
@@ -101,8 +102,18 @@ def test_leverancier_alleen_binnen_tijdvak(receptie):
     assert scan(receptie, "VF-284-T", at="2026-08-01T14:00:00")["code"] == "outside_window"
 
 
-def test_hulpdienst_mag_altijd_door(receptie):
-    assert scan(receptie, "12-AMB-3", vehicle_type="ambulance", at="2026-08-01T03:00:00")["open"]
+def test_hulpdienst_met_zwaailicht_mag_altijd_door(receptie):
+    result = scan(receptie, "12-AMB-3", vehicle_type="ambulance", siren=True, at="2026-08-01T03:00:00")
+    assert result["open"] and result["category"] == "emergency"
+
+
+def test_hulpdienst_zonder_zwaailicht_wordt_gewoon_gecontroleerd(receptie):
+    result = scan(receptie, "12-AMB-3", vehicle_type="ambulance", at="2026-08-01T03:00:00")
+    assert not result["open"] and result["code"] == "unknown"
+
+
+def test_zwaailicht_op_een_gewone_auto_telt_niet(receptie):
+    assert not scan(receptie, "ZZ-999-Z", vehicle_type="auto", siren=True)["open"]
 
 
 def test_uitgang_leest_geen_kenteken(receptie):

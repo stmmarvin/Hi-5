@@ -5,7 +5,8 @@ import { api, ApiError } from '../api';
 import type { Country, Direction, PassageRow, Permit, PresenceRow, ScanResult, SyncItem, User, VehicleType } from '../types';
 import { daylight, isoAt, isoDate, SECONDS_PER_MINUTE, SHIFT_END, SHIFT_START } from './clock';
 import { specOf } from '../scene/Car';
-import { PARKING } from '../scene/layout';
+import { CatmullRomCurve3, Vector3 } from 'three';
+import { BAYS, PARKING, type Bay } from '../scene/layout';
 import { clearLocal, loadLocal, saveLocal } from './localStore';
 import { boxesOverlap, corners, hitsScenery, type Box } from './obstacles';
 import {
@@ -13,7 +14,7 @@ import {
   WEATHER, type GateLock, type Weather,
 } from './weather';
 import { DUTCH_LETTERS, dutchPlateProblem, formatPlate } from './plates';
-import { decideLocal, plateKey, EMERGENCY_TYPES, zoneFor, type Zone } from './rules';
+import { decideLocal, plateKey, EMERGENCY_TYPES, isEmergency, zoneFor, type Zone } from './rules';
 import { buildDeck, CAR_COLORS, CAR_MODELS, type Scenario } from './scenarios';
 import { barrierSound, bump, carVoice, chime, hornSound, startAmbience, stopAllVoices, stopAmbience, updateAmbience, type CarVoice, setMuted, setSiren, setWeatherSound, startEngine, speak, stopEngine, stopSpeaking, tick as indicatorTick, windowSound, hasDutchVoice, type Gender } from './sound';
 
@@ -41,6 +42,10 @@ export interface SimVehicle {
   steer?: number;
   odo?: number;
   cleared?: boolean;
+  /** Vrije plek in de wereld (van de weg af, op de parkeerplaats). `heading` is de draaiing van het model om de y-as. */
+  pose?: { x: number; z: number; heading: number };
+  /** Staat geparkeerd in een vak. */
+  parked?: boolean;
 }
 
 export type DriveView = 'binnen' | 'buiten';
@@ -57,6 +62,8 @@ export interface Readout {
   note?: string;
   /** Hoe lang de camera over het kenteken deed, in seconden. */
   readSeconds?: number;
+  /** De camera zag zwaailicht en sirene. */
+  siren?: boolean;
   open?: boolean;
   reason?: string;
   holder?: string;
@@ -123,6 +130,8 @@ interface GameState {
   /** Hoeveel minuten de noodaccu nog meegaat. */
   battery: number;
   gateDefect: boolean;
+  /** Het overzichtsportaal staat open (los van de simulatie). */
+  portal: boolean;
 }
 
 const fresh = {
@@ -131,7 +140,7 @@ const fresh = {
   mode: 'simulatie' as SessionMode, view: 'binnen' as DriveView, speedKmh: 0, controls: 0,
   readout: null, call: null, chat: null, queue: { in: 0, out: 0 }, vehicles: [], notice: '',
   weather: 'helder' as Weather, snowCm: 0, gateLock: null, lastRead: null,
-  power: 'net' as 'net' | 'accu' | 'uit', battery: 60, gateDefect: false,
+  power: 'net' as 'net' | 'accu' | 'uit', battery: 60, gateDefect: false, portal: false,
 };
 
 export const useGame = create<GameState>(() => ({
@@ -183,6 +192,8 @@ export const world = {
   ice: false,
   locked: false,
   heater: false,
+  /** Het overzichtsportaal staat open: klok, voertuigen en geluid staan stil. */
+  paused: false,
 };
 
 export const VEHICLE_LENGTH: Record<VehicleType, number> = { auto: 4.3, camper: 6.4, bestelbus: 5.4, vrachtwagen: 8, ambulance: 5.8, brandweer: 7.4, politie: 4.78 };
@@ -243,7 +254,14 @@ const zoneOf = new Map<string, Zone>();
 const BATTERY_MINUTES = 60;
 const chain: Record<Direction, Promise<void>> = { in: Promise.resolve(), out: Promise.resolve() };
 
-const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms / world.speed));
+/** Wacht `ms` milliseconden simulatietijd: telt niet door zolang de simulatie gepauzeerd is. */
+async function sleep(ms: number): Promise<void> {
+  let left = ms;
+  while (left > 0) {
+    await new Promise((done) => setTimeout(done, Math.min(100, left / world.speed)));
+    if (!world.paused) left -= 100 * world.speed;
+  }
+}
 const guard = (mine: number) => { if (mine !== epoch) throw new Aborted(); };
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
@@ -260,8 +278,8 @@ function drive(vehicle: SimVehicle, toZ: number, ms: number): Promise<void> {
   let last = start;
   return new Promise((done) => {
     const step = (now: number) => {
-      // Staat de zelf bestuurde auto in de weg, dan wacht dit voertuig erachter tot de baan vrij is.
-      if (playerAhead(vehicle, direction)) {
+      // Gepauzeerd, of de zelf bestuurde auto staat in de weg: dan wacht dit voertuig.
+      if (world.paused || playerAhead(vehicle, direction)) {
         start += now - last;
         last = now;
         voiceOf.get(vehicle)?.update(0, nearness(vehicle.z));
@@ -314,7 +332,7 @@ function sessionExpired(): never {
 async function scanRemote(sc: Scenario, minute: number) {
   if (!get().online) return null;
   try {
-    return await api.scan({ plate: sc.plate, country: sc.country, vehicle_type: sc.type, at: isoAt(minute) });
+    return await api.scan({ plate: sc.plate, country: sc.country, vehicle_type: sc.type, siren: Boolean(sc.siren), at: isoAt(minute) });
   } catch (error) {
     if (error instanceof ApiError) {
       if (error.status === 401) sessionExpired();
@@ -327,7 +345,7 @@ async function scanRemote(sc: Scenario, minute: number) {
 
 function queueOffline(sc: Scenario, minute: number, open: boolean, manual: boolean, reason: string) {
   offlineQueue.push({
-    plate: sc.plate, country: sc.country, vehicle_type: sc.type,
+    plate: sc.plate, country: sc.country, vehicle_type: sc.type, siren: Boolean(sc.siren),
     at: isoAt(minute), open, manual, reason: reason.slice(0, 200),
   });
   saveLocal({ queue: offlineQueue });
@@ -377,9 +395,12 @@ async function flushQueue(intro: string) {
 /** Draait van de weg af de parkeerplaats op en verdwijnt daar uit beeld. */
 function turnIntoParking(vehicle: SimVehicle): Promise<void> {
   const duration = 2000 / world.speed;
-  const start = performance.now();
+  let start = performance.now();
+  let last = start;
   return new Promise((done) => {
     const step = (now: number) => {
+      if (world.paused) start += now - last;
+      last = now;
       const p = Math.min(1, (now - start) / duration);
       vehicle.heading = Math.min(1, p * 2.5) * (Math.PI / 2);
       vehicle.offset = -24 * p * p;
@@ -389,10 +410,144 @@ function turnIntoParking(vehicle: SimVehicle): Promise<void> {
   });
 }
 
-/** Bezoekers en leveranciers gaan naar de parkeerplaats, de anderen rijden door naar de camping. */
+// ---------- parkeren ----------
+
+/** Welk voertuig in welk vak staat, en in welk vak een kenteken staat. */
+const parkedIn = new Map<number, SimVehicle>();
+const bayOf = new Map<string, Bay>();
+
+function clearParking() {
+  parkedIn.clear();
+  bayOf.clear();
+}
+
+/** Een vrij vak, meestal dicht bij de inrit van de parkeerplaats. */
+function freeBay(): Bay | null {
+  const free = BAYS.filter((bay) => !parkedIn.has(bay.index)).sort((a, b) => b.x - a.x);
+  return free.length ? free[Math.floor(Math.random() * Math.min(8, free.length))] : null;
+}
+
+/** Hoe ver het midden van het voertuig van het midden van de parkeerplaats staat: lange voertuigen steken achter het vak uit. */
+function bayDepth(vehicle: SimVehicle): number {
+  const length = hasCarBody(vehicle.type) ? specOf(vehicle.model).L : VEHICLE_LENGTH[vehicle.type];
+  return Math.max(8.5, 6.2 + length / 2);
+}
+
+const headingOf = (dx: number, dz: number) => Math.atan2(dx, dz);
+
+/**
+ * Rijdt een voertuig langs een vloeiende lijn door de punten [x, z], met `speed` meter per seconde.
+ * Achteruit wijst de neus de andere kant op. Staat de zelf bestuurde auto in de weg, dan wacht het voertuig.
+ */
+function follow(vehicle: SimVehicle, points: [number, number][], speed: number, reverse = false): Promise<void> {
+  const curve = new CatmullRomCurve3(points.map(([x, z]) => new Vector3(x, 0, z)), false, 'centripetal');
+  const duration = (curve.getLength() / speed) * 1000;
+  let elapsed = 0;
+  let last = performance.now();
+  return new Promise((done) => {
+    const step = (now: number) => {
+      const dt = now - last;
+      last = now;
+      if (world.paused) {
+        requestAnimationFrame(step);
+        return;
+      }
+      const p = Math.min(1, (elapsed + dt * world.speed) / duration);
+      const eased = p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2;
+      const at = curve.getPointAt(eased);
+      const tangent = curve.getTangentAt(eased);
+      const pose = { x: at.x, z: at.z, heading: reverse ? headingOf(-tangent.x, -tangent.z) : headingOf(tangent.x, tangent.z) };
+      const player = get().playerVehicle;
+      const ahead = footprint(vehicle, pose.x + Math.sin(pose.heading) * (reverse ? -1 : 1), pose.z + Math.cos(pose.heading) * (reverse ? -1 : 1), pose.heading);
+      if (player && player !== vehicle && p < 1 && boxesOverlap(ahead, boxOf(player))) {
+        voiceOf.get(vehicle)?.update(0, nearness(vehicle.z));
+        requestAnimationFrame(step);
+        return;
+      }
+      const moved = vehicle.pose ? Math.hypot(pose.x - vehicle.pose.x, pose.z - vehicle.pose.z) : 0;
+      elapsed += dt * world.speed;
+      vehicle.pose = pose;
+      vehicle.z = pose.z;
+      voiceOf.get(vehicle)?.update(p < 1 ? Math.min(1, moved / Math.max(0.001, dt / 1000) / 22) : 0, nearness(pose.z));
+      if (p < 1) requestAnimationFrame(step); else done();
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+/** Rijdt van de inrijbaan de parkeerplaats op en zet het voertuig met de neus vooruit in een vrij vak. */
+async function park(vehicle: SimVehicle, key: string, mine: number): Promise<boolean> {
+  const bay = freeBay();
+  if (!bay) return false;
+  parkedIn.set(bay.index, vehicle);
+  bayOf.set(key, bay);
+  const middle = PARKING.z;
+  const s = bay.side;
+  const depth = bayDepth(vehicle);
+  vehicle.indicator = 'left';
+  await follow(vehicle, [
+    [LANE_X.in, vehicle.z], [LANE_X.in, middle + 7], [2, middle + 2.6], [-1.5, middle + 0.4], [-7, middle],
+    [bay.x + 6, middle], [bay.x + 1.8, middle + s * 2.8], [bay.x + 0.2, middle + s * (depth - 2.2)], [bay.x, middle + s * depth],
+  ], 4.2);
+  guard(mine);
+  vehicle.indicator = null;
+  vehicle.parked = true;
+  silence(vehicle);
+  return true;
+}
+
+/** Rijdt achteruit uit het vak, over de parkeerplaats terug naar de weg en zet het voertuig op de uitrijbaan. */
+async function unpark(vehicle: SimVehicle, key: string, mine: number) {
+  const bay = bayOf.get(key)!;
+  const middle = PARKING.z;
+  const s = bay.side;
+  const depth = bayDepth(vehicle);
+  vehicle.parked = false;
+  await follow(vehicle, [[bay.x, middle + s * depth], [bay.x, middle + s * (depth - 2.6)], [bay.x - 1.6, middle + s * 1.6], [bay.x - 4.2, middle + s * 0.6]], 1.8, true);
+  guard(mine);
+  parkedIn.delete(bay.index);
+  bayOf.delete(key);
+  vehicle.indicator = 'right';
+  await follow(vehicle, [[bay.x - 4.2, middle + s * 0.6], [bay.x + 1, middle], [-9, middle], [-5, middle + 1.4], [-3.6, middle + 4.5], [LANE_X.out, middle + 7.5]], 4.2);
+  guard(mine);
+  vehicle.indicator = null;
+  vehicle.pose = undefined;
+  vehicle.lane = 'out';
+  vehicle.z = middle + 7.5;
+}
+
+/** Wie al op de parkeerplaats staat als de dienst begint, staat er ook echt geparkeerd. */
+function parkAtStart(row: PresenceRow) {
+  const bay = freeBay();
+  if (!bay) return;
+  const type = (row.vehicle_type in VEHICLE_LENGTH ? row.vehicle_type : 'auto') as VehicleType;
+  const vehicle: SimVehicle = {
+    id: nextId++, plate: row.plate, country: row.country, type, lane: 'in', parked: true,
+    color: CAR_COLORS[nextId % CAR_COLORS.length],
+    model: type === 'auto' ? CAR_MODELS[nextId % CAR_MODELS.length] : VEHICLE_MODEL[type],
+    z: 0,
+  };
+  const depth = bayDepth(vehicle);
+  vehicle.pose = { x: bay.x, z: PARKING.z + bay.side * depth, heading: bay.side > 0 ? 0 : Math.PI };
+  vehicle.z = vehicle.pose.z;
+  parkedIn.set(bay.index, vehicle);
+  bayOf.set(row.plate_key, bay);
+  set((s) => ({ vehicles: [...s.vehicles, vehicle] }));
+}
+
+/** Het vak waar de zelf bestuurde auto nu netjes in staat, of null. */
+function bayUnder(x: number, z: number, heading: number): Bay | null {
+  if (Math.abs(Math.cos(heading)) < 0.85) return null;
+  return BAYS.find((bay) => Math.abs(x - bay.x) < 1.2 && Math.abs(z - bay.z) < 2.6) ?? null;
+}
+
+/** Bezoekers en leveranciers parkeren op de parkeerplaats, de anderen rijden door naar de camping. */
 async function onSite(vehicle: SimVehicle, zone: Zone, mine: number) {
   try {
     if (zone === 'parkeren') {
+      // Blijft op de parkeerplaats staan tot het weer vertrekt.
+      if (await park(vehicle, plateKey(vehicle.plate), mine)) return;
+      // De parkeerplaats is vol: het voertuig rijdt de parkeerplaats op en verdwijnt uit beeld.
       await drive(vehicle, PARKING.z, 1900);
       guard(mine);
       await turnIntoParking(vehicle);
@@ -494,10 +649,8 @@ export function answer(open: boolean) {
 
 interface Plea { say: string; open: boolean; reply: string }
 
-const RECEPTIONISTS: { name: string; gender: Gender }[] = [
-  { name: 'Sanne', gender: 'vrouw' }, { name: 'Bert', gender: 'man' },
-  { name: 'Fenna', gender: 'vrouw' }, { name: 'Joris', gender: 'man' },
-];
+/** Boer Bert staat bij de slagboom en neemt de intercom op. */
+const GATEKEEPER: { name: string; gender: Gender } = { name: 'Boer Bert', gender: 'man' };
 let chooseLine: ((index: number) => void) | null = null;
 let pleas: Plea[] = [];
 
@@ -592,7 +745,7 @@ const addLine = (who: 'receptie' | 'jij', text: string, extra: Partial<Chat> = {
 
 /** De receptie neemt op, luistert naar de bestuurder en beslist zelf of de slagboom open gaat. */
 async function receptionCall(result: ScanResult, plate: string, mine: number, misread = false): Promise<boolean> {
-  const { name, gender } = RECEPTIONISTS[Math.floor(Math.random() * RECEPTIONISTS.length)];
+  const { name, gender } = GATEKEEPER;
   pleas = pleasFor(result, plate, misread);
   set({ chat: { name, lines: [], options: [], status: 'De intercom gaat over…' }, driveMessage: '' });
   chime();
@@ -601,7 +754,7 @@ async function receptionCall(result: ScanResult, plate: string, mine: number, mi
 
   // Zonder Nederlandse stem op deze computer blijft het gesprek alleen tekst.
   const silent = get().muted || hasDutchVoice() ? '' : ' (geen Nederlandse stem gevonden: alleen tekst)';
-  const greeting = `${greetingOfDay()}, receptie van camping De Groene Weide, u spreekt met ${name}. ${seenByReception(result, misread)} Waarmee kan ik u helpen?`;
+  const greeting = `${greetingOfDay()}, camping De Groene Weide, u spreekt met ${name} bij de slagboom. ${seenByReception(result, misread)} Waarmee kan ik u helpen?`;
   addLine('receptie', greeting, { status: `Kies wat je zegt${silent}`, options: pleas.map((p) => p.say) });
   speak(greeting, gender);
   const index = await new Promise<number>((resolve) => { chooseLine = resolve; });
@@ -612,7 +765,7 @@ async function receptionCall(result: ScanResult, plate: string, mine: number, mi
   addLine('jij', plea.say, { options: [], status: `${name} zoekt het op…` });
   await pause(1900);
   guard(mine);
-  addLine('receptie', plea.reply, { status: plea.open ? 'De receptie opent de slagboom' : 'De receptie laat de slagboom dicht', done: true });
+  addLine('receptie', plea.reply, { status: plea.open ? 'Boer Bert opent de slagboom' : 'Boer Bert laat de slagboom dicht', done: true });
   speak(plea.reply, gender);
   // Het gesprek blijft nog even staan en sluit daarna vanzelf.
   const shown = get().chat;
@@ -726,7 +879,7 @@ async function arrive(sc: Scenario, vehicle: SimVehicle, mine: number) {
   const heavy = WEATHER[get().weather].read[1] > 2;
   set({
     readout: {
-      plate: sc.plate, country: sc.country, type: sc.type, model, status: 'reading',
+      plate: sc.plate, country: sc.country, type: sc.type, model, status: 'reading', siren: isEmergency(sc.type, sc.siren),
       note: heavy ? `${WEATHER[get().weather].label}: de camera heeft meer tijd nodig (hooguit ${READ_LIMIT} seconden).` : undefined,
     },
   });
@@ -734,7 +887,7 @@ async function arrive(sc: Scenario, vehicle: SimVehicle, mine: number) {
   // Niet gelezen binnen 10 seconden: het systeem weet het kenteken niet en de intercom neemt het over.
   const misread = !reading.read && key !== UNREADABLE;
   const scanned = misread ? { ...sc, plate: UNREADABLE } : sc;
-  const shown = { plate: scanned.plate, country: sc.country, type: sc.type, model, readSeconds: reading.seconds };
+  const shown = { plate: scanned.plate, country: sc.country, type: sc.type, model, readSeconds: reading.seconds, siren: isEmergency(sc.type, sc.siren) };
 
   const remote = await scanRemote(scanned, minute);
   guard(mine);
@@ -854,15 +1007,29 @@ async function run(sc: Scenario, mine: number) {
   // Wegrijden kan alleen als het voertuig ook echt binnen staat.
   if (sc.dir === 'out' && !present.has(plateKey(sc.plate))) return;
 
+  // Staat het voertuig op de parkeerplaats, dan rijdt het eerst uit zijn vak.
+  const parked = sc.dir === 'out' ? parkedIn.get(bayOf.get(plateKey(sc.plate))?.index ?? -1) : undefined;
+  if (parked) {
+    const voice = carVoice(hasCarBody(parked.type) ? (parked.model === 'Tesla Model 3' ? 'elektrisch' : 'auto') : 'zwaar');
+    if (voice) voiceOf.set(parked, voice);
+    try {
+      await unpark(parked, plateKey(sc.plate), mine);
+      await depart(sc, parked, mine);
+    } catch (error) {
+      if (!(error instanceof Aborted)) removeVehicle(parked);
+    }
+    return;
+  }
+
   const vehicle: SimVehicle = {
-    id: nextId++, plate: sc.plate, country: sc.country, type: sc.type, color: sc.color,
+    id: nextId++, plate: sc.plate, country: sc.country, type: sc.type, color: sc.color, siren: isEmergency(sc.type, sc.siren),
     model: sc.model ?? (sc.type === 'auto' ? CAR_MODELS[nextId % CAR_MODELS.length] : VEHICLE_MODEL[sc.type]),
     lane: sc.dir,
     // Wie alleen op de parkeerplaats mocht, vertrekt ook daarvandaan.
     z: sc.dir === 'in' ? ROAD.spawnIn : zoneOf.get(plateKey(sc.plate)) === 'parkeren' ? PARKING.z : ROAD.spawnOut,
   };
   set((s) => ({ vehicles: [...s.vehicles, vehicle] }));
-  const voice = carVoice(EMERGENCY_TYPES.includes(sc.type) ? 'sirene' : sc.type === 'auto' ? (vehicle.model === 'Tesla Model 3' ? 'elektrisch' : 'auto') : 'zwaar');
+  const voice = carVoice(vehicle.siren ? 'sirene' : hasCarBody(sc.type) ? (vehicle.model === 'Tesla Model 3' ? 'elektrisch' : 'auto') : 'zwaar');
   if (voice) voiceOf.set(vehicle, voice);
   try {
     if (sc.dir === 'out') {
@@ -988,6 +1155,7 @@ function stopClock() {
 let dayPaused = false;
 
 function tick() {
+  if (world.paused) return;
   world.minute += (0.1 / SECONDS_PER_MINUTE) * world.speed;
   const minute = Math.floor(world.minute);
   if (minute !== get().minute) set({ minute });
@@ -1006,6 +1174,7 @@ function tick() {
 }
 
 export async function startShift(mode: SessionMode = 'simulatie') {
+  world.paused = false;
   stopClock();
   epoch++;
   answerCall = null;
@@ -1014,6 +1183,7 @@ export async function startShift(mode: SessionMode = 'simulatie') {
   world.speed = 1;
   world.barrier.in = world.barrier.out = world.fault = false;
   zoneOf.clear();
+  clearParking();
   world.beam.in = false;
   resetWeather();
   resetPlayer();
@@ -1027,6 +1197,8 @@ export async function startShift(mode: SessionMode = 'simulatie') {
       present.add(p.plate_key);
       zoneOf.set(p.plate_key, zoneFor(p.category));
     });
+    set({ vehicles: [] });
+    presence.filter((p) => zoneFor(p.category) === 'parkeren').forEach(parkAtStart);
     deck = mode === 'simulatie' ? buildDeck(permits, new Set(present)) : [];
     set({ permits, presence, log: [], phase: 'playing' });
     startAmbience();
@@ -1064,12 +1236,15 @@ export function setSpeed(speed: 1 | 2) {
 
 const LANE_IN = 3.3;
 let playerChecked = false;
+/** Het parkeervak waarin de zelf bestuurde auto als laatste is stilgezet. */
+let playerBay: number | null = null;
 let playerBusy = false;
 let exitOpen = false;
 /** De bocht waarvoor richting is aangegeven, is ingezet. */
 let turning = false;
 function resetPlayer() {
   playerChecked = playerBusy = exitOpen = turning = false;
+  playerBay = null;
   chooseLine = null;
   stopSpeaking();
   windowSound(false, true);
@@ -1106,7 +1281,9 @@ export function startDriving(plateInput = 'T-902-BZ', model = 'Volkswagen Golf',
     playerVehicle: vehicle,
     driving: true,
     speedKmh: 0,
-    driveMessage: 'Geef gas met W en stuur met A en D. De camera bij de slagboom leest je kenteken vanzelf.',
+    driveMessage: EMERGENCY_TYPES.includes(type)
+      ? 'Zet zwaailicht en sirene aan met L: dan herkent de camera je als hulpdienst en gaat de slagboom altijd open.'
+      : 'Geef gas met W en stuur met A en D. De camera bij de slagboom leest je kenteken vanzelf.',
   }));
 }
 
@@ -1121,6 +1298,7 @@ export function stopDriving() {
 
 /** Terug naar het keuzescherm: automatische kentekenherkenning of zelf rijden. */
 export function backToMenu() {
+  world.paused = false;
   stopClock();
   epoch++;
   answerCall = null;
@@ -1130,7 +1308,23 @@ export function backToMenu() {
   resetPlayer();
   silenceAll();
   stopAmbience();
+  clearParking();
   set({ ...fresh, phase: 'ready' });
+}
+
+/** Opent het overzichtsportaal. Loopt er een simulatie, dan stopt die eerst: het portaal staat er los van. */
+/** Opent het overzichtsportaal. Een lopende simulatie pauzeert: klok, voertuigen en geluid staan stil. */
+export function openPortal() {
+  world.paused = get().phase === 'playing';
+  if (world.paused) setMuted(true);
+  set({ portal: true });
+}
+
+/** Terug naar de simulatie: die loopt verder waar hij was. */
+export function closePortal() {
+  if (world.paused) setMuted(get().muted);
+  world.paused = false;
+  set({ portal: false });
 }
 
 export function toggleView() {
@@ -1161,7 +1355,13 @@ function footprint(vehicle: SimVehicle, x: number, z: number, heading: number): 
 
 const boxOf = (vehicle: SimVehicle): Box => (vehicle.player
   ? footprint(vehicle, LANE_IN + (vehicle.offset ?? 0), vehicle.z, vehicle.heading ?? 0)
+  : vehicle.pose ? footprint(vehicle, vehicle.pose.x, vehicle.pose.z, vehicle.pose.heading)
   : footprint(vehicle, LANE_X[vehicle.lane], vehicle.z, 0));
+
+/** Plek en draaiing (om de y-as, zoals de rechthoek op de grond) van elk voertuig, voor de kaart. */
+export function groundBox(vehicle: SimVehicle): Box {
+  return boxOf(vehicle);
+}
 
 /** Staat de zelf bestuurde auto vlak voor dit voertuig op dezelfde baan? */
 function playerAhead(vehicle: SimVehicle, direction: number): boolean {
@@ -1199,7 +1399,8 @@ function blocked(x: number, z: number, heading: number, vehicle: SimVehicle): bo
     // de erfgrens: alleen door een open slagboom
     const viaIn = vehicle.cleared && x > 2.2 && x < 4.7;
     const viaOut = exitOpen && x < -2.2 && x > -4.7;
-    return !(viaIn || viaOut);
+    if (!(viaIn || viaOut)) return true;
+    return hitsScenery(car); // Boer Bert en zijn bedieningskast
   }
   if (z >= 4.4 && Math.abs(x) > 5.2) return true; // hek langs de oprit
   return hitsScenery(car); // receptie, caravans, tenten, bomen, palen en geparkeerde auto's
@@ -1263,6 +1464,12 @@ export function stepPlayer(delta: number, input: DriveInput) {
     vehicle.odo = (vehicle.odo ?? 0) + speed * dt;
   }
   vehicle.speed = speed;
+  // Netjes in een parkeervak gezet: de bestuurder ziet in welk vak hij staat.
+  const bay = Math.abs(speed) < 0.05 ? bayUnder(LANE_IN + (vehicle.offset ?? 0), vehicle.z, vehicle.heading ?? 0) : null;
+  if (bay && bay.index !== playerBay) {
+    playerBay = bay.index;
+    set({ driveMessage: `Netjes geparkeerd in vak ${bay.number}. Wil je weer weg? Rijd via de baan UIT het terrein af.` });
+  } else if (!bay && Math.abs(speed) > 1) playerBay = null;
   const kmh = Math.round(Math.abs(speed) * 3.6);
   if (kmh !== get().speedKmh) set({ speedKmh: kmh });
 
@@ -1284,7 +1491,7 @@ export function stepPlayer(delta: number, input: DriveInput) {
 }
 
 function playerScenario(vehicle: SimVehicle): Scenario {
-  return { at: world.minute, dir: 'in', plate: vehicle.plate, country: vehicle.country, type: vehicle.type, model: vehicle.model, color: vehicle.color };
+  return { at: world.minute, dir: 'in', plate: vehicle.plate, country: vehicle.country, type: vehicle.type, model: vehicle.model, color: vehicle.color, siren: Boolean(vehicle.siren) };
 }
 
 function checkPlayer(vehicle: SimVehicle) {
@@ -1372,5 +1579,6 @@ export async function logout() {
   stopAmbience();
   clearLocal();
   offlineQueue = [];
+  clearParking();
   set({ user: null, phase: 'login', ...fresh });
 }

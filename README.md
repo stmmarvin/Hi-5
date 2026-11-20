@@ -255,9 +255,11 @@ doorloopt: voertuig gedetecteerd, kentekenplaat gevonden, tekens lezen, land bep
 Daaronder staat een plattegrond van de camping met jouw auto in het midden (de camping ligt boven, de openbare
 weg onder) en de slagbomen in rood (dicht) of groen (open).
 
-Je kiest een eigen auto of rijdt als **politie, ambulance of brandweer**. Een hulpdienst heeft een eigen kenteken,
-hoeft niet in de kentekenlijst te staan en de slagboom gaat altijd open; bij ijzel of te veel sneeuw blijft de
-veiligheidsvergrendeling gelden. Met L zet je zwaailicht en sirene aan. Sturen doe je met A en D of de pijltjes, en
+Je kiest een eigen auto of rijdt als **politie, ambulance of brandweer**. Met L zet je zwaailicht en sirene aan.
+De AI-camera herkent een hulpdienst aan zwaailicht en sirene: dan gaat de slagboom altijd open, ook zonder boeking.
+Staan ze uit, dan controleert de camera het kenteken zoals bij iedereen en bel je zo nodig de intercom. Een gewone
+auto met een zwaailicht telt niet. Bij ijzel of te veel sneeuw blijft de veiligheidsvergrendeling ook voor
+hulpdiensten gelden. Sturen doe je met A en D of de pijltjes, en
 van binnen ook door met de muis over het beeld te slepen.
 
 De maximumsnelheid is 30 km/u op de weg en de oprit en 15 km/u op het terrein (voorbij de slagboom); voor hulpdiensten geldt geen limiet. Het bord

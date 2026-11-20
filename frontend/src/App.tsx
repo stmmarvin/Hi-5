@@ -1,17 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Scene } from './scene/Scene';
 import { boot, useGame } from './sim/engine';
 import { GateCards, Overlay, TopBar } from './ui/Hud';
 import { Login } from './ui/Login';
-import { SidePanel } from './ui/SidePanel';
+import { Portal } from './ui/Portal';
 
 export function App() {
   const phase = useGame((s) => s.phase);
-  const mode = useGame((s) => s.mode);
-  const [open, setPanel] = useState(false);
-  // Het overzicht hoort bij de automatische kentekenherkenning; bij zelf rijden is het er niet.
-  const overview = phase === 'playing' && mode === 'simulatie';
-  const panel = open && overview;
+  const portal = useGame((s) => s.portal);
 
   useEffect(() => {
     void boot();
@@ -28,27 +24,20 @@ export function App() {
     return () => window.removeEventListener('click', release);
   }, []);
 
-  // Escape sluit het overzicht.
-  useEffect(() => {
-    if (!panel) return;
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setPanel(false); };
-    window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
-  }, [panel]);
-
   if (phase === 'loading') return <p className="laden">Bezig met laden…</p>;
   if (phase === 'login') return <Login />;
 
   return (
     <div className="app">
-      <TopBar overview={overview} overviewOpen={panel} onOverview={() => setPanel(!panel)} />
-      <main className="werkblad">
+      <TopBar />
+      {/* Het overzichtsportaal is een eigen pagina. De simulatie blijft eronder staan, gepauzeerd. */}
+      {portal && <Portal />}
+      <main className="werkblad" hidden={portal}>
         <section className="terrein" aria-label="3D-beeld van de oprit">
           <Scene />
           <GateCards />
           <Overlay />
         </section>
-        {overview && <SidePanel open={panel} onClose={() => setPanel(false)} />}
       </main>
     </div>
   );

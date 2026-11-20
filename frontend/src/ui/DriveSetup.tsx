@@ -53,8 +53,8 @@ export function DriveSetup() {
           <p className="veld-kop">Kenteken</p>
           <Plate plate={EMERGENCY_SERVICES[service].plate} country="NL" />
           <div className="boeking goed" role="status">
-            <strong>Slagboom gaat open: hulpdienst</strong>
-            <p>Hulpdiensten mogen altijd door, ook zonder boeking.</p>
+            <strong>Met zwaailicht en sirene gaat de slagboom open</strong>
+            <p>De camera herkent een hulpdienst aan zwaailicht en sirene. Zet ze aan met L voor je bij de slagboom bent. Zonder controleert de camera je kenteken zoals bij iedereen en bel je de intercom.</p>
           </div>
           <button type="button" className="knop primair" onClick={() => startDriving(EMERGENCY_SERVICES[service].plate, VEHICLE_MODEL[service], EMERGENCY_SERVICES[service].color, service)}>Start de motor</button>
           {message && <p className="kaart-sub">{message}</p>}

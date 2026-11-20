@@ -116,7 +116,8 @@ export function Interior({ vehicle, full = false }: { vehicle: SimVehicle; full?
   const sideLength = cabin.front - cabin.rear;
 
   return (
-    <group>
+    // Binnen in de auto valt geen sneeuw (zie SnowCover).
+    <group userData={{ noSnow: true }}>
       {/* dashboard met kap boven de tellers */}
       <mesh position={[0, dashTop - 0.16, dashZ]} material={dash}><boxGeometry args={[spec.W - 0.24, 0.34, 0.6]} /></mesh>
       <mesh position={[0.37, dashTop + 0.03, dashZ - 0.1]} material={dash}><boxGeometry args={[0.46, 0.05, 0.3]} /></mesh>

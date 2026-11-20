@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { campLayout, CARAVANS, PARKED, PARKING, RECEPTION } from '../scene/layout';
 import { specOf } from '../scene/Car';
-import { playerPose, useGame, world } from '../sim/engine';
+import { groundBox, playerPose, useGame, world } from '../sim/engine';
 import { corners, type Box } from '../sim/obstacles';
 
 const SIZE = 220;          // pixels van het kaartje
@@ -128,7 +128,12 @@ export function MiniMap() {
       for (const other of vehicles) {
         if (other === playerVehicle) continue;
         ctx.fillStyle = other.type === 'ambulance' ? '#f4d21f' : '#e4e2da';
-        ctx.fillRect(sx((other.lane === 'in' ? 3.3 : -3.3) - 0.9), sz(other.z - 2.2), 1.8 * SCALE, 4.4 * SCALE);
+        const box = groundBox(other);
+        ctx.save();
+        ctx.translate(sx(box.x), sz(box.z));
+        ctx.rotate(-box.turn);
+        ctx.fillRect(-box.halfW * SCALE, -box.halfL * SCALE, 2 * box.halfW * SCALE, 2 * box.halfL * SCALE);
+        ctx.restore();
       }
 
       // Jouw auto: een pijl in de rijrichting, altijd in het midden.

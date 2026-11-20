@@ -26,12 +26,12 @@ function Lights({ width, length, y }: { width: number; length: number; y: number
   );
 }
 
-/** Zwaailichten: twee helften die om en om knipperen. Bij je eigen voertuig alleen als de sirene aan staat. */
+/** Zwaailichten: twee helften die om en om knipperen. Alleen als zwaailicht en sirene aan staan. */
 function Beacon({ vehicle, at, width }: { vehicle: SimVehicle; at: [number, number, number]; width: number }) {
   const left = useRef<MeshStandardMaterial>(null);
   const right = useRef<MeshStandardMaterial>(null);
   useFrame(({ clock }) => {
-    const active = vehicle.player ? Boolean(vehicle.siren) : true;
+    const active = Boolean(vehicle.siren);
     const flash = Math.sin(clock.elapsedTime * 14) > 0;
     if (left.current) left.current.emissiveIntensity = active && flash ? 3.5 : 0.08;
     if (right.current) right.current.emissiveIntensity = active && !flash ? 3.5 : 0.08;
@@ -182,7 +182,14 @@ export function Vehicle({ vehicle }: { vehicle: SimVehicle }) {
       group.current.rotation.z = (vehicle.steer ?? 0) * (vehicle.speed ?? 0) * 0.003;
       return;
     }
-    // Op de parkeerplaats draait een voertuig van de weg af.
+    // Op de parkeerplaats rijdt een voertuig vrij over het terrein en staat het daarna in een vak.
+    if (vehicle.pose) {
+      group.current.position.set(vehicle.pose.x, 0, vehicle.pose.z);
+      group.current.rotation.y = vehicle.pose.heading;
+      group.current.rotation.z = vehicle.parked ? 0 : Math.sin(clock.elapsedTime * 10 + vehicle.id) * 0.004;
+      return;
+    }
+    // Is de parkeerplaats vol, dan draait een voertuig van de weg af.
     group.current.position.x = LANE_X[vehicle.lane] + (vehicle.offset ?? 0);
     group.current.position.z = vehicle.z;
     group.current.rotation.y = (vehicle.lane === 'in' ? Math.PI : 0) + (vehicle.heading ?? 0);

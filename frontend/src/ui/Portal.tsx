@@ -1,77 +1,227 @@
-// Het overzicht bij de automatische kentekenherkenning: kentekenlijst, gescande kentekens, logboek, webcam,
-// weer en regels. Opent vanuit de navbar; links een menu, rechts de inhoud, bovenin de belangrijkste tellers.
-import { useState, type FormEvent, type ReactNode } from 'react';
+// Het overzichtsportaal: een eigen pagina naast de simulatie. De planning laat zien wanneer gasten,
+// medewerkers en leveranciers komen; verder de kentekenlijst, wie er gescand is, het logboek, de webcam en de regels.
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../api';
-import { isoDate, momentLabel, shortDate, timeOf } from '../sim/clock';
-import { clearGate, reloadPermits, sendCustom, useGame } from '../sim/engine';
+import { isoDate, momentLabel, shortDate, SHIFT_START, timeOf } from '../sim/clock';
+import { refresh, reloadPermits, sendCustom, useGame } from '../sim/engine';
 import { cleanPlateInput, COUNTRIES, dutchPlateProblem, formatPlate } from '../sim/plates';
-import { decideLocal } from '../sim/rules';
-import { heaterOn, READ_LIMIT, seconds, SNOW_LOCK_CM, WEATHER } from '../sim/weather';
 import type { NewPermit, PassageRow, Permit } from '../types';
 import { CATEGORY, Plate } from './Plate';
 import { WebcamScanner } from './Webcam';
 
-type Tab = 'lijst' | 'binnen' | 'logboek' | 'camera' | 'weer' | 'regels';
+type Tab = 'planning' | 'lijst' | 'binnen' | 'logboek' | 'camera' | 'regels';
 type Tone = 'goed' | 'let-op' | 'fout' | 'stil';
 
-export function SidePanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [tab, setTab] = useState<Tab>('lijst');
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'planning', label: 'Planning' },
+  { id: 'lijst', label: 'Kentekenlijst' },
+  { id: 'binnen', label: 'Gescand bij de ingang' },
+  { id: 'logboek', label: 'Logboek' },
+  { id: 'camera', label: 'Webcam' },
+  { id: 'regels', label: 'Regels' },
+];
+
+/** Het overzichtsportaal: los van de simulatie, voor de planning en de administratie van de slagboom. */
+export function Portal() {
+  const [tab, setTab] = useState<Tab>('planning');
   const permits = useGame((s) => s.permits.length);
   const presence = useGame((s) => s.presence.length);
-  const log = useGame((s) => s.log);
-  const waiting = log.filter((p) => p.outcome === 'pending').length;
+  const log = useGame((s) => s.log.length);
+  const counts: Partial<Record<Tab, number>> = { lijst: permits, binnen: presence, logboek: log };
 
-  const menu: { id: Tab; label: string; count?: number }[] = [
-    { id: 'lijst', label: 'Kentekenlijst', count: permits },
-    { id: 'binnen', label: 'Gescand bij de ingang', count: presence },
-    { id: 'logboek', label: 'Logboek', count: log.length },
-    { id: 'camera', label: 'Webcam' },
-    { id: 'weer', label: 'Weer en apparatuur' },
-    { id: 'regels', label: 'Regels' },
-  ];
+  useEffect(() => { void refresh(); }, []);
 
   return (
-    <aside className={`overzicht${open ? ' open' : ''}`} aria-label="Overzicht" inert={!open}>
-      <header className="ov-kop">
-        <h2>Overzicht</h2>
-        <dl className="ov-tellers">
-          <Counter label="In de kentekenlijst" value={permits} onClick={() => setTab('lijst')} />
-          <Counter label="Gescand bij de ingang" value={presence} onClick={() => setTab('binnen')} />
-          <Counter label="Passages deze dienst" value={log.length} onClick={() => setTab('logboek')} />
-          <Counter label="Wacht op receptie" value={waiting} tone={waiting ? 'let-op' : undefined} onClick={() => setTab('logboek')} />
-        </dl>
-        <button type="button" className="ov-sluit" onClick={onClose} aria-label="Sluit het overzicht">✕</button>
+    <main className="portaal">
+      <header className="pt-kop">
+        <div>
+          <p className="pt-boven">Camping De Groene Weide</p>
+          <h2>Overzichtsportaal</h2>
+          <p className="pt-uitleg">Wanneer gasten, medewerkers en leveranciers komen, en wie er bij de slagboom is geweest. Los van de simulatie.</p>
+        </div>
       </header>
-
-      <nav className="ov-menu" role="tablist" aria-label="Onderdelen">
-        {menu.map((item) => (
+      <nav className="pt-tabs" role="tablist" aria-label="Onderdelen">
+        {TABS.map((item) => (
           <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>
-            <span>{item.label}</span>
-            {item.count !== undefined && <span className="ov-aantal">{item.count}</span>}
+            {item.label}
+            {counts[item.id] !== undefined && <span className="ov-aantal">{counts[item.id]}</span>}
           </button>
         ))}
       </nav>
-
-      <div className="ov-inhoud" role="tabpanel">
+      <div className="pt-inhoud ov-inhoud" role="tabpanel">
+        {tab === 'planning' && <Planning />}
         {tab === 'lijst' && <PermitList />}
         {tab === 'binnen' && <PresenceList />}
         {tab === 'logboek' && <LogList />}
         {tab === 'camera' && <WebcamScanner />}
-        {tab === 'weer' && <WeatherStatus />}
         {tab === 'regels' && <Rules />}
       </div>
-    </aside>
+    </main>
   );
 }
 
-function Counter({ label, value, tone, onClick }: { label: string; value: number; tone?: Tone; onClick: () => void }) {
+// ---------- planning ----------
+
+const DAY_START = 6 * 60;
+const DAY_END = 22 * 60;
+const HOURS = Array.from({ length: (DAY_END - DAY_START) / 60 + 1 }, (_, i) => DAY_START / 60 + i);
+
+const toMinutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+const addDays = (iso: string, days: number) => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const daysBetween = (a: string, b: string) => Math.round((new Date(`${b}T12:00:00`).getTime() - new Date(`${a}T12:00:00`).getTime()) / 86400000);
+const longDate = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const dayHead = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric' });
+const percent = (minute: number) => `${((Math.min(DAY_END, Math.max(DAY_START, minute)) - DAY_START) / (DAY_END - DAY_START)) * 100}%`;
+
+/** De dag van de simulatie: daar begint de planning. */
+const TODAY = isoDate(SHIFT_START);
+
+function Planning() {
+  const permits = useGame((s) => s.permits);
+  const [day, setDay] = useState(TODAY);
+  const [view, setView] = useState<'dag' | 'week'>('dag');
+
+  const guests = permits.filter((p) => p.category === 'guest' && p.arrival && p.departure);
+  const arriving = guests.filter((p) => p.arrival === day);
+  const leaving = guests.filter((p) => p.departure === day);
+  const staying = guests.filter((p) => p.arrival! < day && p.departure! > day);
+  const staff = permits.filter((p) => p.category === 'staff');
+  const suppliers = permits.filter((p) => p.category === 'supplier');
+  const step = view === 'week' ? 7 : 1;
+
   return (
-    <button type="button" className={`ov-teller${tone ? ` ${tone}` : ''}`} onClick={onClick}>
-      <dd>{value}</dd>
-      <dt>{label}</dt>
-    </button>
+    <>
+      <div className="pt-datum">
+        <div className="rijtje">
+          <button type="button" className="knop klein" onClick={() => setDay(addDays(day, -step))} aria-label={view === 'week' ? 'Vorige week' : 'Vorige dag'}>◀</button>
+          <h3>{view === 'week' ? `Vanaf ${longDate(day)}` : longDate(day)}</h3>
+          <button type="button" className="knop klein" onClick={() => setDay(addDays(day, step))} aria-label={view === 'week' ? 'Volgende week' : 'Volgende dag'}>▶</button>
+          {day !== TODAY && <button type="button" className="knop klein" onClick={() => setDay(TODAY)}>Dag van de simulatie</button>}
+        </div>
+        <div className="ov-filters" role="group" aria-label="Weergave">
+          <button type="button" aria-pressed={view === 'dag'} onClick={() => setView('dag')}>Dag</button>
+          <button type="button" aria-pressed={view === 'week'} onClick={() => setView('week')}>Twee weken</button>
+        </div>
+      </div>
+
+      {view === 'dag' ? (
+        <>
+          <dl className="pt-tellers">
+            <div className="pt-teller gast"><dt>Gasten komen aan</dt><dd>{arriving.length}</dd></div>
+            <div className="pt-teller gast"><dt>Gasten vertrekken</dt><dd>{leaving.length}</dd></div>
+            <div className="pt-teller medewerker"><dt>Medewerkers</dt><dd>{staff.length}</dd></div>
+            <div className="pt-teller leverancier"><dt>Leveranciers</dt><dd>{suppliers.length}</dd></div>
+          </dl>
+
+          <section className="ov-kaart">
+            <h4>Wanneer medewerkers en leveranciers komen</h4>
+            <p className="klein-tekst">Elke balk is het tijdvak waarin de slagboom vanzelf opengaat. Daarbuiten belt iemand aan bij Boer Bert.</p>
+            <div className="pt-tijdlijn">
+              <div className="pt-rij pt-uren-rij" aria-hidden="true">
+                <span />
+                <div className="pt-uren">
+                  {HOURS.map((hour) => <span key={hour} style={{ left: percent(hour * 60) }}>{String(hour).padStart(2, '0')}</span>)}
+                </div>
+              </div>
+              <TimeRows title="Leveranciers" tone="leverancier" items={suppliers} />
+              <TimeRows title="Medewerkers" tone="medewerker" items={staff} />
+            </div>
+          </section>
+
+          <div className="pt-twee">
+            <GuestList title="Komen aan" empty="Op deze dag komen er geen gasten aan." items={arriving} note={(p) => `${daysBetween(p.arrival!, p.departure!)} nachten, tot ${shortDate(p.departure!)}`} />
+            <GuestList title="Vertrekken" empty="Op deze dag vertrekken er geen gasten." items={leaving} note={(p) => `sinds ${shortDate(p.arrival!)}`} />
+          </div>
+          <p className="klein-tekst">Verder verblijven er {staying.length} gasten op de camping. Gasten rijden vanaf de dag van aankomst tot en met de dag van vertrek vanzelf in en uit.</p>
+        </>
+      ) : <Week from={day} guests={guests} />}
+    </>
   );
 }
+
+function TimeRows({ title, tone, items }: { title: string; tone: string; items: Permit[] }) {
+  return (
+    <div className="pt-groep">
+      <p className="pt-groep-kop">{title}</p>
+      {items.map((p) => {
+        const always = !p.window_start || !p.window_end;
+        const start = always ? DAY_START : toMinutes(p.window_start!);
+        const end = always ? DAY_END : toMinutes(p.window_end!);
+        return (
+          <div key={p.id} className="pt-rij">
+            <div className="pt-naam"><strong>{p.holder}</strong><small>{p.plate} · {p.vehicle_type}</small></div>
+            <div className="pt-baan">
+              <span className={`pt-balk ${tone}${always ? ' altijd' : ''}`} style={{ left: percent(start), right: `calc(100% - ${percent(end)})` }}>
+                {always ? 'Altijd' : `${p.window_start!.slice(0, 5)} – ${p.window_end!.slice(0, 5)}`}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GuestList({ title, empty, items, note }: { title: string; empty: string; items: Permit[]; note: (p: Permit) => string }) {
+  return (
+    <section className="ov-kaart">
+      <h4>Gasten: {title.toLowerCase()} <span className="ov-aantal">{items.length}</span></h4>
+      {!items.length ? <p className="leeg">{empty}</p> : (
+        <ul className="pt-gasten">
+          {items.map((p) => (
+            <li key={p.id}>
+              <Plate plate={p.plate} country={p.country} />
+              <div className="ov-wie"><strong>{p.holder}</strong><small>{p.pitch} · {p.vehicle_type} · {note(p)}</small></div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** Twee weken vooruit: van elke gast een balk van aankomst tot en met vertrek. */
+function Week({ from, guests }: { from: string; guests: Permit[] }) {
+  const DAYS = 14;
+  const days = Array.from({ length: DAYS }, (_, i) => addDays(from, i));
+  const last = days[DAYS - 1];
+  const shown = guests.filter((p) => p.arrival! <= last && p.departure! >= from).sort((a, b) => a.arrival!.localeCompare(b.arrival!));
+  const column = (iso: string) => Math.max(0, Math.min(DAYS - 1, daysBetween(from, iso)));
+  return (
+    <section className="ov-kaart">
+      <h4>Gasten in deze twee weken</h4>
+      <p className="klein-tekst">Een balk loopt van de dag van aankomst tot en met de dag van vertrek. Medewerkers en leveranciers komen elke dag in hetzelfde tijdvak (zie Dag).</p>
+      <div className="pt-week">
+        <div className="pt-week-rij kop">
+          <span />
+          <div className="pt-week-baan">
+            {days.map((iso) => <span key={iso} className={iso === TODAY ? 'vandaag' : ''}>{dayHead(iso)}</span>)}
+          </div>
+        </div>
+        {!shown.length && <p className="leeg">Geen gasten in deze twee weken.</p>}
+        {shown.map((p) => (
+          <div key={p.id} className="pt-week-rij">
+            <div className="pt-naam"><strong>{p.holder}</strong><small>{p.pitch}</small></div>
+            <div className="pt-week-baan">
+              <span
+                className="pt-balk gast"
+                style={{ gridColumn: `${column(p.arrival!) + 1} / ${column(p.departure!) + 2}` }}
+                title={`${p.holder}: ${shortDate(p.arrival!)} t/m ${shortDate(p.departure!)}`}
+              >
+                {shortDate(p.arrival!)} – {shortDate(p.departure!)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 
 function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   return <span className={`ov-label ${tone}`}>{children}</span>;
@@ -115,22 +265,19 @@ function allowed(permit: Permit): string {
   return 'Altijd';
 }
 
-/** Mag dit kenteken nu naar binnen? Met dezelfde regels als de slagboom, op de tijd van de simulatie. */
-function status(permit: Permit, minute: number): { tone: Tone; text: string } {
-  const decision = decideLocal([permit], { plate: permit.plate, type: permit.vehicle_type }, minute);
-  if (decision.open) return { tone: 'goed', text: 'Mag nu binnen' };
-  if (decision.code === 'too_early') return { tone: 'let-op', text: 'Komt later' };
-  if (decision.code === 'outside_window') return { tone: 'let-op', text: 'Buiten tijdvak' };
-  return { tone: 'stil', text: 'Afgelopen' };
+/** Hoe het er op de dag van de simulatie voor staat. */
+function status(permit: Permit): { tone: Tone; text: string } {
+  if (permit.category !== 'guest') return permit.window_start ? { tone: 'stil', text: 'Vast tijdvak' } : { tone: 'goed', text: 'Altijd' };
+  if (permit.arrival! > TODAY) return { tone: 'let-op', text: 'Komt later' };
+  if (permit.departure! < TODAY) return { tone: 'stil', text: 'Afgelopen' };
+  return { tone: 'goed', text: 'Verblijft nu' };
 }
 
 type CategoryFilter = 'alles' | Permit['category'];
 
 function PermitList() {
   const permits = useGame((s) => s.permits);
-  const minute = useGame((s) => s.minute);
   const admin = useGame((s) => s.user?.role === 'beheerder');
-  const playing = useGame((s) => s.phase === 'playing');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<CategoryFilter>('alles');
   const [adding, setAdding] = useState(false);
@@ -156,7 +303,7 @@ function PermitList() {
   return (
     <Section
       title="Kentekenlijst"
-      intro="Wie mag wanneer naar binnen. De status geldt voor de tijd in de simulatie."
+      intro="Wie mag wanneer naar binnen. De status geldt voor de dag van de simulatie."
       actions={admin && (
         <button type="button" className={`knop klein${adding ? '' : ' accent'}`} aria-expanded={adding} onClick={() => setAdding(!adding)}>
           {adding ? 'Sluit formulier' : '+ Kenteken toevoegen'}
@@ -184,7 +331,7 @@ function PermitList() {
       {shown.length === 0 ? <p className="leeg">Geen kenteken of reservering gevonden.</p> : (
         <ul className="ov-lijst">
           {shown.map((p) => {
-            const now = status(p, minute);
+            const now = status(p);
             return (
               <li key={p.id} className="ov-rij">
                 <Plate plate={p.plate} country={p.country} />
@@ -204,13 +351,12 @@ function PermitList() {
       )}
       {hint && <p className="fout">{hint}</p>}
       {!admin && <p className="klein-tekst">Alleen de beheerder kan kentekens toevoegen of verwijderen.</p>}
-      {playing && <SendPlate />}
     </Section>
   );
 }
 
 /** Laat een zelf gekozen kenteken naar de slagboom rijden. */
-function SendPlate() {
+export function SendPlate() {
   const [custom, setCustom] = useState('');
   const [hint, setHint] = useState('');
   function send(event: FormEvent) {
@@ -383,61 +529,6 @@ function LogList() {
           })}
         </ul>
       )}
-    </Section>
-  );
-}
-
-// ---------- weer en apparatuur ----------
-
-function Tile({ label, value, note, tone, children }: { label: string; value: string; note?: string; tone: Tone; children?: ReactNode }) {
-  return (
-    <div className={`ov-tegel ${tone}`}>
-      <small>{label}</small>
-      <strong>{value}</strong>
-      {note && <p>{note}</p>}
-      {children}
-    </div>
-  );
-}
-
-function WeatherStatus() {
-  const weather = useGame((s) => s.weather);
-  const snowCm = useGame((s) => s.snowCm);
-  const gateLock = useGame((s) => s.gateLock);
-  const lastRead = useGame((s) => s.lastRead);
-  const power = useGame((s) => s.power);
-  const battery = useGame((s) => s.battery);
-  const gateDefect = useGame((s) => s.gateDefect);
-  const info = WEATHER[weather];
-  return (
-    <Section title="Weer en apparatuur" intro="Kies het weer in de navbar. Hier zie je wat de apparatuur bij de slagboom ermee doet.">
-      <div className="ov-tegels">
-        <Tile label="Weer" value={`${info.label}, ${info.temperature} °C`} tone="stil" />
-        <Tile
-          label="Camera" value="In bedrijf" tone="goed"
-          note={`Waterdicht (IP66). Lensverwarming ${heaterOn(weather) ? 'aan tegen condens en ijs' : 'uit, niet nodig'}.`}
-        />
-        <Tile
-          label="Laatste kenteken"
-          value={!lastRead ? 'Nog niets gelezen' : lastRead.read ? `Gelezen in ${seconds(lastRead.seconds)}` : 'Via de intercom'}
-          tone={!lastRead ? 'stil' : lastRead.read ? 'goed' : 'let-op'}
-          note={`Norm: binnen ${READ_LIMIT} seconden, ook bij zware neerslag.`}
-        />
-        <Tile
-          label="Sneeuw bij de slagboom" value={`${snowCm} cm`} tone={snowCm >= SNOW_LOCK_CM ? 'fout' : snowCm > 0 ? 'let-op' : 'stil'}
-          note={`Vanaf ${SNOW_LOCK_CM} cm vergrendelt de slagboom.`}
-        />
-        <Tile label="Slagboom" value={gateLock ? `Vergrendeld door ${gateLock}` : 'Vrij'} tone={gateLock ? 'fout' : 'goed'}>
-          {gateLock && <button type="button" className="knop klein" onClick={clearGate}>Vrijgemaakt: geef vrij</button>}
-        </Tile>
-        <Tile
-          label="Stroom" value={power === 'net' ? 'Normaal' : power === 'accu' ? `Noodaccu, nog ${Math.ceil(battery)} min` : 'Uit'}
-          tone={power === 'net' ? 'goed' : power === 'accu' ? 'let-op' : 'fout'}
-          note="Bij uitval werkt alles door op de noodaccu; daarna opent een medewerker met de hand."
-        />
-        <Tile label="Slagboom-aandrijving" value={gateDefect ? 'Defect' : 'In orde'} tone={gateDefect ? 'fout' : 'goed'} note="Bij een defect gaat de uitgang open en bedient een medewerker de ingang." />
-        <Tile label="Intercom" value={power === 'uit' ? 'Uit' : 'In bedrijf'} tone="goed" note="Filtert wind en neerslag weg, zodat het gesprek verstaanbaar blijft." />
-      </div>
     </Section>
   );
 }

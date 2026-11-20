@@ -49,7 +49,7 @@ export const api = {
   presence: () => request<PresenceRow[]>('/presence'),
   passages: (limit = 60) => request<PassageRow[]>(`/passages?limit=${limit}`),
 
-  scan: (body: { plate: string; country: string; vehicle_type: string; at: string }) =>
+  scan: (body: { plate: string; country: string; vehicle_type: string; siren: boolean; at: string }) =>
     post<ScanResult>('/gate/scan', body),
   decide: (passageId: number, open: boolean) => post<PassageRow>(`/gate/passages/${passageId}/decision`, { open }),
   safety: (locked: boolean, cause: string) => post<void>('/gate/safety', { locked, cause }),

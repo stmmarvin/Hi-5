@@ -9,7 +9,7 @@ from . import schemas
 from .config import settings
 from .db import get_db
 from .models import AuditLog, Passage, Permit, Presence, Reservation, User, utcnow
-from .rules import decide, forget_expired, plate_key
+from .rules import decide, forget_expired, is_emergency, plate_key
 from .security import (
     COOKIE_NAME, DUMMY_HASH, audit, client_ip, create_token, current_user,
     login_limiter, require_admin, verify_password,
@@ -55,8 +55,9 @@ def enter(db: Session, passage: Passage, permit: Permit | None) -> None:
     ))
 
 
-def identity(db: Session, key: str, vehicle_type: str, permit: Permit | None = None) -> tuple[Permit | None, str, str]:
-    if vehicle_type in ("ambulance", "brandweer", "politie"):
+def identity(db: Session, key: str, vehicle_type: str, permit: Permit | None = None,
+             siren: bool = False) -> tuple[Permit | None, str, str]:
+    if is_emergency(vehicle_type, siren):
         return None, "Hulpdienst", "emergency"
     permit = permit or db.scalar(select(Permit).where(Permit.plate_key == key))
     if permit is None:
@@ -183,8 +184,8 @@ def scan(body: schemas.ScanIn, _: User = Depends(current_user), db: Session = De
 
     for attempt in (1, 2):
         forget_expired(db, at)
-        decision = decide(db, key, body.vehicle_type, at)
-        permit, holder, category = identity(db, key, body.vehicle_type, decision.permit)
+        decision = decide(db, key, body.vehicle_type, at, body.siren)
+        permit, holder, category = identity(db, key, body.vehicle_type, decision.permit, body.siren)
         passage = Passage(**common, permit_id=permit.id if permit else None, holder=holder, category=category,
                           outcome="granted" if decision.open else "pending", reason=decision.reason)
         db.add(passage)
@@ -259,7 +260,7 @@ def sync(body: schemas.SyncIn, request: Request, user: User = Depends(current_us
         key = plate_key(item.plate)
         # Opschonen gaat op de klok van het systeem, niet op een tijd die de slagboom zelf meestuurt.
         forget_expired(db, moment(item.at))
-        permit, holder, category = identity(db, key, item.vehicle_type)
+        permit, holder, category = identity(db, key, item.vehicle_type, siren=item.siren)
         if item.manual and item.open and holder == "Onbekend":
             holder = "Bezoeker"
         passage = Passage(

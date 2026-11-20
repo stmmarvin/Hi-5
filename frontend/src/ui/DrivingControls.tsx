@@ -17,7 +17,8 @@ function typing(event: KeyboardEvent): boolean {
 
 /** Verbindt het toetsenbord met de zelf bestuurde auto, zonder de 3D-scène opnieuw te tekenen. */
 export function DrivingControls() {
-  const active = useGame((s) => Boolean(s.playerVehicle));
+  // In het overzichtsportaal staat de simulatie stil: dan sturen de toetsen de auto niet.
+  const active = useGame((s) => Boolean(s.playerVehicle) && !s.portal);
   const keys = useRef(held);
   const blink = useRef(false);
   // Sturen met de muis of vinger: slepen over het beeld terwijl je in de auto zit.

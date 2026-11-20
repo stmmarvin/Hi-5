@@ -66,6 +66,7 @@ export interface SyncItem {
   plate: string;
   country: Country;
   vehicle_type: VehicleType;
+  siren: boolean;
   at: string;
   open: boolean;
   manual: boolean;

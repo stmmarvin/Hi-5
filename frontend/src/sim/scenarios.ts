@@ -14,6 +14,8 @@ export interface Scenario {
   model?: string;
   /** Wat de bestuurder door de intercom zegt als de slagboom dicht blijft. */
   message?: string;
+  /** Hulpdienst met zwaailicht en sirene aan. */
+  siren?: boolean;
 }
 
 export const CAR_COLORS = ['#b8322a', '#2e5e8c', '#e4e2da', '#3b3f45', '#6f8a3a', '#c9772b', '#8fa6b5', '#5b4a8a'];
@@ -147,7 +149,7 @@ export function buildDeck(permits: Permit[], presentKeys: Set<string>): Scenario
 
   // Hulpdienst.
   // Volgens de RDW geen klinkers op een Nederlands kenteken: dus niet AMB.
-  const ambulance = { plate: `${between(10, 19)}-GHR-${between(1, 9)}`, country: 'NL' as Country, type: 'ambulance' as VehicleType, color: '#f4d21f' };
+  const ambulance = { plate: `${between(10, 19)}-GHR-${between(1, 9)}`, country: 'NL' as Country, type: 'ambulance' as VehicleType, color: '#f4d21f', siren: true };
   deck.push({ at: t(17, 45), dir: 'in', ...ambulance });
   deck.push({ at: t(18, 15), dir: 'out', ...ambulance });
 

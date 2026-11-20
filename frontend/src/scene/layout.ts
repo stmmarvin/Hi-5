@@ -35,6 +35,18 @@ export const PARKED: { x: number; z: number; color: string; model: string; plate
   { x: 4.5, z: -8.5, color: '#3b3f45', model: 'Tesla Model 3', plate: 'T-640-NB' },
 ];
 
+/** Een parkeervak: het midden in de wereld, de rij (-1 achteraan, 1 vooraan) en het nummer op de plattegrond. */
+export interface Bay { index: number; number: number; x: number; z: number; side: -1 | 1 }
+
+/** De vakken waar voertuigen echt kunnen parkeren: 2 rijen van 16, zonder de vakken waar al een auto vast staat. */
+export const BAYS: Bay[] = ([-1, 1] as const).flatMap((side, row) => Array.from({ length: 16 }, (_, i): Bay => ({
+  index: row * 16 + i, number: row * 16 + i + 1, side,
+  x: PARKING.x - 25.5 + i * 3, z: PARKING.z + side * 8.5,
+}))).filter((bay) => !PARKED.some((car) => Math.abs(PARKING.x + car.x - bay.x) < 1 && Math.sign(car.z) === bay.side));
+
+/** Waar Boer Bert bij de slagboom staat, met zijn bedieningskast. */
+export const BERT = { x: 5.25, z: 1.9, post: { x: 5.05, z: 0.75 } };
+
 let made: CampLayout | null = null;
 
 /** De indeling is elke keer dezelfde: het toeval heeft een vast beginpunt. */
