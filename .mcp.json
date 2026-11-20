@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "azure-devops": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@azure-devops/mcp",
+        "2026-OpenICT-Sept-Project4-Hi-5"
+      ],
+      "env": {}
+    }
+  }
+}
