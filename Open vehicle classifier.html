@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f5">
+  <title>Emergency vehicle photo review</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font: 16px/1.5 "Segoe UI", Arial, sans-serif;
+      color: #202a31;
+      background: #f6f7f5;
+      --ink: #202a31;
+      --muted: #64727a;
+      --line: #dce2df;
+      --green: #176b54;
+      --green-dark: #10513f;
+      --surface: #fff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    button, input { font: inherit; }
+    button:focus-visible, input:focus-visible, .drop-zone:focus-visible {
+      outline: 3px solid #71bea5;
+      outline-offset: 3px;
+    }
+    .page { width: min(1120px, 100%); margin: 0 auto; padding: 32px 24px 56px; }
+    header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: clamp(26px, 4vw, 36px); letter-spacing: -.04em; line-height: 1.15; }
+    header p { margin: 8px 0 0; color: var(--muted); }
+    .privacy { flex: 0 0 auto; padding: 7px 11px; border: 1px solid #c9ded5; border-radius: 999px; background: #edf6f1; color: #245d49; font-size: 13px; }
+    .model-notice { margin-bottom: 20px; padding: 13px 15px; border: 1px solid #ead8aa; border-radius: 9px; background: #fff9e9; color: #66501b; font-size: 14px; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(270px, .85fr); gap: 20px; align-items: start; }
+    .card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 5px 18px #253c3010; }
+    .photo-card { padding: 16px; }
+    .drop-zone { position: relative; display: grid; min-height: 390px; place-items: center; overflow: hidden; border: 2px dashed #cbd6d1; border-radius: 9px; background: #f8faf8; text-align: center; }
+    .drop-zone.is-dragging { border-color: var(--green); background: #edf7f2; }
+    .drop-zone img { display: block; max-width: 100%; max-height: min(68vh, 680px); object-fit: contain; }
+    .drop-zone img[hidden], .empty-photo[hidden] { display: none; }
+    .empty-photo { max-width: 370px; padding: 28px; color: var(--muted); }
+    .empty-icon { display: grid; width: 58px; height: 58px; place-items: center; margin: 0 auto 13px; border-radius: 50%; background: #eaf3ee; color: var(--green); font-size: 29px; }
+    .empty-photo strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 17px; }
+    .drop-hint { display: block; margin-top: 5px; font-size: 13px; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+    .button { min-height: 42px; padding: 8px 15px; border: 1px solid #cbd5d0; border-radius: 7px; background: #fff; color: var(--ink); font-weight: 650; cursor: pointer; }
+    .button:hover:not(:disabled) { background: #f2f6f3; }
+    .button:disabled { opacity: .48; cursor: not-allowed; }
+    .button-primary { border-color: var(--green); background: var(--green); color: #fff; }
+    .button-primary:hover:not(:disabled) { background: var(--green-dark); }
+    .button-quiet { border-color: transparent; background: transparent; color: var(--green-dark); }
+    #file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); }
+    .filename { min-width: 0; overflow: hidden; margin-left: auto; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .section-title { margin: 0 0 15px; font-size: 18px; letter-spacing: -.02em; }
+    .field-label { display: block; margin: 0 0 4px; color: var(--muted); font-size: 13px; }
+    .prediction { min-height: 52px; margin: 0 0 16px; padding: 11px 12px; border-radius: 7px; background: #f1f4f2; font-weight: 650; }
+    .prediction.unavailable { color: #775c1f; background: #fff8e7; font-weight: 500; }
+    .confirmed { margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--line); }
+    .confirmed[hidden] { display: none; }
+    .confirmed strong { display: block; font-size: 17px; }
+    .confirmed small { display: block; margin-top: 3px; color: var(--muted); }
+    .review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .review-actions .button { flex: 1 1 120px; }
+    .export-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .export-row p { margin: 0; color: var(--muted); font-size: 13px; }
+    .saved-card { margin-top: 20px; }
+    .saved-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .saved-heading .section-title { margin-bottom: 12px; }
+    #review-count { color: var(--muted); font-size: 13px; }
+    .review-list { display: grid; gap: 8px; max-height: 310px; overflow-y: auto; }
+    .review-list:empty::after { content: "No reviewed photos saved yet."; padding: 12px 0; color: var(--muted); font-size: 14px; }
+    .review-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; text-align: left; cursor: pointer; }
+    .review-item:hover, .review-item[aria-current="true"] { border-color: #84b8a2; background: #f3f8f5; }
+    .review-item img { flex: 0 0 48px; width: 48px; height: 48px; border-radius: 5px; background: #eef1ef; object-fit: cover; }
+    .review-item-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+    .review-item-copy strong, .review-item-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .review-item-copy strong { font-size: 13px; }
+    .review-item-copy span { color: var(--muted); font-size: 12px; }
+    #status { min-height: 22px; margin: 12px 2px 0; color: var(--muted); font-size: 13px; }
+    #status.error { color: #a3312c; }
+    dialog { width: min(440px, calc(100% - 32px)); padding: 22px; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 18px 70px #11251c44; }
+    dialog::backdrop { background: #10201988; }
+    dialog h2 { margin: 0 0 4px; font-size: 21px; }
+    dialog p { margin: 0 0 17px; color: var(--muted); font-size: 14px; }
+    .choice-list { display: grid; gap: 8px; }
+    .choice { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+    .choice:has(input:checked) { border-color: #72ac91; background: #f1f7f3; }
+    .choice input { accent-color: var(--green); }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 19px; }
+    @media (max-width: 760px) {
+      .page { padding: 22px 14px 36px; }
+      header { flex-direction: column; gap: 12px; }
+      .workspace { grid-template-columns: 1fr; }
+      .drop-zone { min-height: 290px; }
+      .filename { width: 100%; margin-left: 0; }
+      .export-row { align-items: flex-start; flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .button, .drop-zone { transition: background .15s ease, border-color .15s ease; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div>
+        <h1>Emergency vehicle photo review</h1>
+        <p>Review a photo, confirm its label, and keep your work on this device.</p>
+      </div>
+      <span class="privacy">Photos stay on this device</span>
+    </header>
+
+    <div class="model-notice" id="model-notice" role="status">
+      Automatic prediction is unavailable: <code>vehicle_classifier.pt</code> and
+      <code>train_vehicles.py</code> were not included with this page. No categories are
+      shown as model predictions until a trained browser-compatible model is provided.
+      You can still review photos manually.
+    </div>
+
+    <div class="workspace">
+      <section class="card photo-card" aria-label="Photo">
+        <div class="drop-zone" id="drop-zone" tabindex="0" role="button" aria-label="Choose, drop, or paste a photo">
+          <div class="empty-photo" id="empty-photo">
+            <span class="empty-icon" aria-hidden="true">＋</span>
+            <strong>Choose or drop a photo</strong>
+            <span>Click here, drag a photo onto this area, or paste an image from your clipboard.</span>
+            <span class="drop-hint">Your photo is stored locally in this browser.</span>
+          </div>
+          <img id="photo-preview" alt="Photo being reviewed" hidden>
+        </div>
+        <div class="toolbar">
+          <label class="button button-primary" for="file-input">Choose photo</label>
+          <input id="file-input" type="file" accept="image/*">
+          <span class="filename" id="filename">No photo selected</span>
+        </div>
+        <p id="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <aside class="card" aria-label="Prediction and review">
+        <h2 class="section-title">Review this photo</h2>
+        <span class="field-label">Original prediction</span>
+        <p class="prediction unavailable" id="prediction">Unavailable — no compatible trained model was supplied.</p>
+        <div class="review-actions">
+          <button class="button button-primary" id="correct-button" type="button" disabled title="Correct is available when an automatic prediction can be made.">Correct</button>
+          <button class="button" id="change-button" type="button" disabled>Change label</button>
+        </div>
+        <div class="confirmed" id="confirmed-panel" hidden>
+          <span class="field-label">My confirmed label</span>
+          <strong id="confirmed-label"></strong>
+          <small id="confirmed-date"></small>
+        </div>
+        <div class="export-row">
+          <p><strong id="export-count">0</strong> reviewed photos</p>
+          <button class="button" id="export-button" type="button" disabled>Export reviewed photos</button>
+        </div>
+      </aside>
+    </div>
+
+    <section class="card saved-card" aria-labelledby="saved-title">
+      <div class="saved-heading">
+        <h2 class="section-title" id="saved-title">Saved reviews</h2>
+        <span id="review-count">0</span>
+      </div>
+      <div class="review-list" id="review-list" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <dialog id="label-dialog" aria-labelledby="dialog-title">
+    <form method="dialog" id="label-form">
+      <h2 id="dialog-title">What is actually in this photo?</h2>
+      <p>Choose the label that best describes the photo.</p>
+      <div class="choice-list">
+        <label class="choice"><input type="radio" name="label" value="Police vehicle" required> Police vehicle</label>
+        <label class="choice"><input type="radio" name="label" value="Ambulance"> Ambulance</label>
+        <label class="choice"><input type="radio" name="label" value="Fire truck"> Fire truck</label>
+        <label class="choice"><input type="radio" name="label" value="Not a vehicle"> Not a vehicle</label>
+        <label class="choice"><input type="radio" name="label" value="Other vehicle"> Other vehicle</label>
+      </div>
+      <div class="dialog-actions">
+        <button class="button" value="cancel">Cancel</button>
+        <button class="button button-primary" id="save-label-button" value="confirm">Save label</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const DB_NAME = 'emergency-photo-review';
+      const STORE_NAME = 'reviews';
+      const LABELS = ['Police vehicle', 'Ambulance', 'Fire truck', 'Not a vehicle', 'Other vehicle'];
+      const $ = (id) => document.getElementById(id);
+      const preview = $('photo-preview');
+      const dialog = $('label-dialog');
+      let db;
+      let activeReviewId = null;
+      let pendingPhoto = null;
+      let previewUrl = null;
+      let reviews = [];
+      const thumbnailUrls = new Map();
+
+      function setStatus(message, isError = false) {
+        $('status').textContent = message;
+        $('status').classList.toggle('error', isError);
+      }
+
+      function openDatabase() {
+        return new Promise((resolve, reject) => {
+          if (!('indexedDB' in window)) {
+            reject(new Error('This browser does not support local photo storage.'));
+            return;
+          }
+          const request = indexedDB.open(DB_NAME, 1);
+          request.onupgradeneeded = () => {
+            const store = request.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            store.createIndex('reviewedAt', 'reviewedAt');
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error('Could not open local photo storage.'));
+          request.onblocked = () => reject(new Error('Photo storage is blocked by another open copy of this page.'));
+        });
+      }
+
+      function transaction(mode, action) {
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, mode);
+          const request = action(tx.objectStore(STORE_NAME));
+          let result;
+          let settled = false;
+          request.onsuccess = () => { result = request.result; };
+          request.onerror = () => {
+            settled = true;
+            reject(request.error || new Error('Local photo storage failed.'));
+          };
+          tx.oncomplete = () => {
+            if (!settled) resolve(result);
+          };
+          tx.onabort = () => {
+            if (!settled) reject(tx.error || new Error('Local photo storage transaction was aborted.'));
+          };
+        });
+      }
+
+      function safeFileName(name) {
+        const cleaned = String(name || 'pasted-photo.png').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim();
+        return cleaned || 'photo';
+      }
+
+      function setPreview(blob, filename, reviewId = null) {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewUrl = URL.createObjectURL(blob);
+        preview.src = previewUrl;
+        preview.hidden = false;
+        $('empty-photo').hidden = true;
+        $('filename').textContent = filename;
+        $('filename').title = filename;
+        activeReviewId = reviewId;
+        pendingPhoto = reviewId ? null : { blob, filename };
+        $('correct-button').disabled = true;
+        $('change-button').disabled = false;
+        $('confirmed-panel').hidden = true;
+        $('confirmed-label').textContent = '';
+        $('confirmed-date').textContent = '';
+        const record = reviewId ? reviews.find((item) => item.id === reviewId) : null;
+        if (record) {
+          $('confirmed-panel').hidden = false;
+          $('confirmed-label').textContent = record.confirmedLabel;
+          $('confirmed-date').textContent = `Reviewed ${new Date(record.reviewedAt).toLocaleString()}`;
+        }
+        renderReviewList();
+      }
+
+      function makeId() {
+        if (crypto.randomUUID) return crypto.randomUUID();
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
+
+      function escapeText(text) {
+        return String(text).replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[char]);
+      }
+
+      function renderReviewList() {
+        const list = $('review-list');
+        list.replaceChildren();
+        for (const record of [...reviews].sort((a, b) => b.reviewedAt - a.reviewedAt)) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'review-item';
+          button.setAttribute('aria-current', record.id === activeReviewId ? 'true' : 'false');
+          const image = document.createElement('img');
+          if (!thumbnailUrls.has(record.id)) thumbnailUrls.set(record.id, URL.createObjectURL(record.image));
+          image.src = thumbnailUrls.get(record.id);
+          image.alt = '';
+          const copy = document.createElement('span');
+          copy.className = 'review-item-copy';
+          copy.innerHTML = `<strong>${escapeText(record.filename)}</strong><span>${escapeText(record.confirmedLabel)} · original: ${escapeText(record.originalPrediction)}</span>`;
+          button.append(image, copy);
+          button.addEventListener('click', () => {
+            setPreview(record.image, record.filename, record.id);
+            setStatus(`Opened saved review: ${record.filename}`);
+          });
+          list.append(button);
+        }
+        $('review-count').textContent = `${reviews.length} saved`;
+        $('export-count').textContent = String(reviews.length);
+        $('export-button').disabled = reviews.length === 0;
+      }
+
+      async function loadReviews() {
+        reviews = await transaction('readonly', (store) => store.getAll());
+        renderReviewList();
+      }
+
+      async function acceptPhoto(file, defaultName) {
+        if (!file || !file.type.startsWith('image/')) {
+          setStatus('Choose a valid image file.', true);
+          return;
+        }
+        try {
+          const url = URL.createObjectURL(file);
+          try {
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+          const filename = safeFileName(file.name || defaultName);
+          setPreview(file, filename);
+          setStatus('Photo ready. Choose Change label to save a review.');
+        } catch (error) {
+          setStatus(`Could not open this photo: ${error.message}`, true);
+        }
+      }
+
+      async function saveReview(label) {
+        if (!LABELS.includes(label)) {
+          setStatus('Choose one of the available labels.', true);
+          return;
+        }
+        let record;
+        if (activeReviewId) {
+          record = reviews.find((item) => item.id === activeReviewId);
+          if (!record) throw new Error('The saved review could not be found.');
+          record.confirmedLabel = label;
+          record.reviewedAt = Date.now();
+        } else if (pendingPhoto) {
+          record = {
+            id: makeId(),
+            filename: pendingPhoto.filename,
+            originalPrediction: 'Unavailable — no compatible trained model supplied',
+            confirmedLabel: label,
+            image: pendingPhoto.blob,
+            reviewedAt: Date.now(),
+          };
+        } else {
+          setStatus('Choose a photo before saving a label.', true);
+          return;
+        }
+        await transaction('readwrite', (store) => store.put(record));
+        if (!reviews.some((item) => item.id === record.id)) reviews.push(record);
+        pendingPhoto = null;
+        activeReviewId = record.id;
+        setPreview(record.image, record.filename, record.id);
+        setStatus(`Saved locally: ${record.filename}`);
+      }
+
+      function crc32(bytes) {
+        let crc = -1;
+        for (const byte of bytes) {
+          crc ^= byte;
+          for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (-(crc & 1) & 0xedb88320);
+        }
+        return (crc ^ -1) >>> 0;
+      }
+
+      function dosDateTime(timestamp) {
+        const date = new Date(timestamp);
+        const year = Math.max(1980, date.getFullYear());
+        return {
+          date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+          time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+        };
+      }
+
+      function makeZip(entries) {
+        const encoder = new TextEncoder();
+        const localParts = [];
+        const centralParts = [];
+        let offset = 0;
+        const viewOf = (length, fill) => {
+          const bytes = new Uint8Array(length);
+          fill(new DataView(bytes.buffer));
+          return bytes;
+        };
+        for (const entry of entries) {
+          const name = encoder.encode(entry.name);
+          const data = entry.data;
+          const crc = crc32(data);
+          const { date, time } = dosDateTime(entry.timestamp);
+          const localHeader = viewOf(30, (view) => {
+            view.setUint32(0, 0x04034b50, true);
+            view.setUint16(4, 20, true);
+            view.setUint16(6, 0x0800, true);
+            view.setUint16(8, 0, true);
+            view.setUint16(10, time, true);
+            view.setUint16(12, date, true);
+            view.setUint32(14, crc, true);
+            view.setUint32(18, data.length, true);
+            view.setUint32(22, data.length, true);
+            view.setUint16(26, name.length, true);
+            view.setUint16(28, 0, true);
+          });
+          localParts.push(localHeader, name, data);
+          const centralHeader = viewOf(46, (view) => {
+            view.setUint32(0, 0x02014b50, true);
+            view.setUint16(4, 20, true);
+            view.setUint16(6, 20, true);
+            view.setUint16(8, 0x0800, true);
+            view.setUint16(10, 0, true);
+            view.setUint16(12, time, true);
+            view.setUint16(14, date, true);
+            view.setUint32(16, crc, true);
+            view.setUint32(20, data.length, true);
+            view.setUint32(24, data.length, true);
+            view.setUint16(28, name.length, true);
+            view.setUint16(30, 0, true);
+            view.setUint16(32, 0, true);
+            view.setUint16(34, 0, true);
+            view.setUint16(36, 0, true);
+            view.setUint32(38, 0, true);
+            view.setUint32(42, offset, true);
+          });
+          centralParts.push(centralHeader, name);
+          offset += localHeader.length + name.length + data.length;
+        }
+        const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+        const end = viewOf(22, (view) => {
+          view.setUint32(0, 0x06054b50, true);
+          view.setUint16(4, 0, true);
+          view.setUint16(6, 0, true);
+          view.setUint16(8, entries.length, true);
+          view.setUint16(10, entries.length, true);
+          view.setUint32(12, centralSize, true);
+          view.setUint32(16, offset, true);
+          view.setUint16(20, 0, true);
+        });
+        return new Blob([...localParts, ...centralParts, end], { type: 'application/zip' });
+      }
+
+      function csvCell(value) {
+        return `"${String(value).replace(/"/g, '""')}"`;
+      }
+
+      async function exportReviews() {
+        if (!reviews.length) return;
+        const encoder = new TextEncoder();
+        const entries = [];
+        const namesByLabel = new Map();
+        const rows = [['filename', 'original_prediction', 'confirmed_label']];
+        const ordered = [...reviews].sort((a, b) => a.reviewedAt - b.reviewedAt);
+        for (const review of ordered) {
+          if (!LABELS.includes(review.confirmedLabel)) throw new Error(`Unknown confirmed label in ${review.filename}.`);
+          const used = namesByLabel.get(review.confirmedLabel) || new Set();
+          let exportName = review.filename;
+          let suffix = 2;
+          while (used.has(exportName.toLocaleLowerCase())) {
+            const dot = review.filename.lastIndexOf('.');
+            const stem = dot > 0 ? review.filename.slice(0, dot) : review.filename;
+            const extension = dot > 0 ? review.filename.slice(dot) : '';
+            exportName = `${stem} (${suffix})${extension}`;
+            suffix += 1;
+          }
+          used.add(exportName.toLocaleLowerCase());
+          namesByLabel.set(review.confirmedLabel, used);
+          entries.push({
+            name: `${review.confirmedLabel}/${exportName}`,
+            data: new Uint8Array(await review.image.arrayBuffer()),
+            timestamp: review.reviewedAt,
+          });
+          rows.push([review.filename, review.originalPrediction, review.confirmedLabel]);
+        }
+        entries.push({
+          name: 'reviews.csv',
+          data: encoder.encode('\uFEFF' + rows.map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n'),
+          timestamp: Date.now(),
+        });
+        const url = URL.createObjectURL(makeZip(entries));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'reviewed-photos.zip';
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setStatus(`Exported ${reviews.length} reviewed photo${reviews.length === 1 ? '' : 's'} as a ZIP.`);
+      }
+
+      $('file-input').addEventListener('change', (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (file) acceptPhoto(file, 'photo');
+      });
+
+      const dropZone = $('drop-zone');
+      dropZone.addEventListener('click', (event) => {
+        if (event.target.closest('button, label')) return;
+        $('file-input').click();
+      });
+      dropZone.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          $('file-input').click();
+        }
+      });
+      for (const eventName of ['dragenter', 'dragover']) {
+        dropZone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          dropZone.classList.add('is-dragging');
+        });
+      }
+      for (const eventName of ['dragleave', 'drop']) {
+        dropZone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          dropZone.classList.remove('is-dragging');
+        });
+      }
+      dropZone.addEventListener('drop', (event) => {
+        const file = [...event.dataTransfer.files].find((item) => item.type.startsWith('image/'));
+        if (file) acceptPhoto(file, 'dropped-photo.png');
+        else setStatus('Drop an image file to review.', true);
+      });
+      document.addEventListener('paste', (event) => {
+        const image = [...(event.clipboardData?.items || [])]
+          .find((item) => item.type.startsWith('image/'));
+        if (!image) return;
+        const blob = image.getAsFile();
+        if (blob) acceptPhoto(blob, `pasted-photo.${blob.type.split('/')[1] || 'png'}`);
+      });
+
+      $('change-button').addEventListener('click', () => {
+        if (!preview.src) return;
+        const current = reviews.find((item) => item.id === activeReviewId)?.confirmedLabel;
+        $('label-form').reset();
+        if (current) {
+          const radio = [...$('label-form').elements.label].find((item) => item.value === current);
+          if (radio) radio.checked = true;
+        }
+        dialog.showModal();
+      });
+      $('label-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const label = new FormData(event.currentTarget).get('label');
+        if (!label) {
+          setStatus('Select a label before saving.', true);
+          return;
+        }
+        $('save-label-button').disabled = true;
+        try {
+          await saveReview(label);
+          dialog.close();
+        } catch (error) {
+          setStatus(`Could not save this review: ${error.message}`, true);
+        } finally {
+          $('save-label-button').disabled = false;
+        }
+      });
+      $('correct-button').addEventListener('click', () => {
+        setStatus('Correction is unavailable until a compatible trained model can provide an original prediction.', true);
+      });
+      $('export-button').addEventListener('click', async () => {
+        $('export-button').disabled = true;
+        try {
+          await exportReviews();
+        } catch (error) {
+          setStatus(`Export failed: ${error.message}`, true);
+        } finally {
+          $('export-button').disabled = reviews.length === 0;
+        }
+      });
+
+      openDatabase()
+        .then(async (database) => {
+          db = database;
+          await loadReviews();
+          setStatus('Local photo storage is ready.');
+        })
+        .catch((error) => {
+          $('change-button').disabled = true;
+          $('export-button').disabled = true;
+          setStatus(`Local storage unavailable: ${error.message}`, true);
+        });
+
+      window.addEventListener('beforeunload', () => {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        for (const url of thumbnailUrls.values()) URL.revokeObjectURL(url);
+        db?.close();
+      });
+    })();
+  </script>
+</body>
+</html>

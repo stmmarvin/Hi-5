@@ -2,6 +2,12 @@
 
 An in-place update of the existing Vite camera and CLIP app. It keeps webcam capture and image upload, adds a cautious Dutch-service verification stage, and replaces the CSS gate drawing with an original Three.js campground entrance. The entrance is a virtual simulation only.
 
+## Standalone photo review
+
+Open [`Open vehicle classifier.html`](./Open%20vehicle%20classifier.html) directly in a modern browser for the portable, offline photo-review page. It supports choosing, dropping, or pasting an image, manually confirming one of five separate labels, saving and revising reviews in browser-local IndexedDB, and exporting reviewed images plus a CSV in a ZIP file. It has no install, server, network, or command-line requirement.
+
+The trained `vehicle_classifier.pt`, its `train_vehicles.py`, and the earlier portable browser classifier were not present in this checkout. The standalone page therefore does not claim an automatic prediction or enable **Correct**; automatic predictions require a compatible browser model exported from the actual trained model. The five manual review labels remain available, including separate **Not a vehicle** and **Other vehicle** options.
+
 ## Install and start
 
 Requirements: Node.js 18+, npm, a recent browser with WebGL support, and internet access on first use to fetch model and OCR language files.
